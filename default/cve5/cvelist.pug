@@ -51,6 +51,8 @@ mixin cveErrors
 mixin portal
     - var y = new Date().getFullYear()
     - var nextY = y+1
+    - var selectedState = (typeof filterState !== 'undefined' && filterState !== null) ? String(filterState) : 'RESERVED'
+    - var selectedYear = (typeof filterYear !== 'undefined' && filterYear !== null && filterYear !== '') ? String(filterYear) : String(y)
     header.pad.ban.bort
         .left
             label.vgi-globe.lbl Portal: 
@@ -84,24 +86,24 @@ mixin portal
         .lbl Show
         .rdg
             .form-control
-                input.hid(id="chkall" type="radio" name="fstate" value="")
+                input.hid(id="chkall" type="radio" name="fstate" value="" checked=(selectedState == ''))
                 label.lbl.vgi-misc(for="chkall") All
             .form-control
-                input.hid(id="chkres" type="radio" name="fstate" value="RESERVED" checked=true)
+                input.hid(id="chkres" type="radio" name="fstate" value="RESERVED" checked=(selectedState == 'RESERVED'))
                 label.lbl.vgi-tag(for="chkres") Reserved
             .form-control
-                input.hid(id="chkpub" type="radio" name="fstate" value="PUBLISHED")
+                input.hid(id="chkpub" type="radio" name="fstate" value="PUBLISHED" checked=(selectedState == 'PUBLISHED'))
                 label.lbl.vgi-globe(for="chkpub") Published
             .form-control
-                input.hid(id="chkrej" type="radio" name="fstate" value="REJECTED")
+                input.hid(id="chkrej" type="radio" name="fstate" value="REJECTED" checked=(selectedState == 'REJECTED'))
                 label.lbl.vgi-no(for="chkrej") Rejected
         .lbl Year
         select.lbl.txt(name="y")
-            option(value=nextY)=nextY
-            option(value=y selected)=y
+            option(value=nextY selected=(selectedYear == String(nextY)))=nextY
+            option(value=y selected=(selectedYear == String(y)))=y
             - var i = y-1
             while i > 1998
-                option(value=i)=i
+                option(value=i selected=(selectedYear == String(i)))=i
                 - i--;
         |  
         button.btn.vgi-reuse(onclick='event.preventDefault();cveGetList();return false;') Go

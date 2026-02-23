@@ -12,6 +12,10 @@ var csCache = {
 }
 var portalBootstrapPromise = null;
 var portalNavStatePromise = null;
+var cvePortalFilterChoice = {
+    fstate: 'RESERVED',
+    y: null
+};
 
 function setPortalNavConnectionState(connected) {
     var nav = document.getElementById('cvePortalNav');
@@ -195,7 +199,12 @@ function showCvePortal(event, forceShow) {
         setPortalSidebarState(false);
         return false;
     }
-    showPortalViewOrLogin();
+    setPortalSidebarState(true);
+    var portalFeedback = new feedback(document.getElementById('port'), 'spinner');
+    showPortalViewOrLogin()
+        .finally(function () {
+            portalFeedback.cancel();
+        });
     return false;
 }
 
@@ -357,6 +366,15 @@ async function portalLogout(message) {
 
 async function showPortalView(orgInfo, userInfo) {
     try {
+        var filterForm = document.getElementById("cvePortalFilter");
+        if (filterForm) {
+            if (filterForm.fstate) {
+                cvePortalFilterChoice.fstate = filterForm.fstate.value + '';
+            }
+            if (filterForm.y && filterForm.y.value) {
+                cvePortalFilterChoice.y = filterForm.y.value + '';
+            }
+        }
         if (!orgInfo) {
             orgInfo = await csClient.getOrgInfo();
         }
@@ -367,6 +385,10 @@ async function showPortalView(orgInfo, userInfo) {
             portalType: csCache.portalType,
             portalURL: csCache.url,
             ctemplate: 'portal',
+            filterState: cvePortalFilterChoice.fstate,
+            filterYear: cvePortalFilterChoice.y ? cvePortalFilterChoice.y : (
+                typeof currentYear !== 'undefined' ? (currentYear + '') : ((new Date()).getFullYear() + '')
+            ),
             userInfo: userInfo,
             org: orgInfo
         });
@@ -827,6 +849,7 @@ async function cveShowError(err) {
 
 async function cveGetList() {
     var currentReserved = true;
+    var cveListFeedback = new feedback(document.getElementById('cveList'), 'spinner');
     var filter = {
         state: 'RESERVED',
         cve_id_year: currentYear
@@ -834,6 +857,7 @@ async function cveGetList() {
     var cveForm = document.getElementById("cvePortalFilter");
     if (cveForm) {
         if (cveForm.fstate) {
+            cvePortalFilterChoice.fstate = cveForm.fstate.value + '';
             if (cveForm.fstate.value) {
                 filter.state = cveForm.fstate.value + '';
                 if (filter.state != 'RESERVED') {
@@ -845,6 +869,7 @@ async function cveGetList() {
         }
         if (cveForm.y) {
             filter.cve_id_year = cveForm.y.value + '';
+            cvePortalFilterChoice.y = filter.cve_id_year;
             if (filter.cve_id_year != currentYear) {
                 currentReserved = false;
             }
@@ -852,9 +877,6 @@ async function cveGetList() {
         if (cveForm.page) {
             filter.page = cveForm.page;
         }
-    }
-    if (document.getElementById('cveList')) {
-        document.getElementById('cveList').innerHTML = '<center><div class="spinner"></div></center>';
     }
     try {
         var ret = await csClient.getCveIds(filter);
@@ -888,6 +910,8 @@ async function cveGetList() {
         cveShowError(e);
         cveRenderList([]);
         return ([]);
+    } finally {
+        cveListFeedback.cancel();
     }
 }
 
@@ -913,11 +937,14 @@ async function cveReserve(yearOffset, number) {
 
 async function cveSelectLoad(event) {
     event.preventDefault();
+    var loadFeedback = new feedback(document.getElementById('load1'), 'text', 'Loading...');
     try {
-        cveLoad(event.target.elements.id.value)
+        await cveLoad(event.target.elements.id.value);
     } catch (e) {
         portalErrorHandler(e);
         cveShowError('Please login to CVE Portal. Your session may have expired!');
+    } finally {
+        loadFeedback.cancel();
     }
     return false;
 }
@@ -936,7 +963,9 @@ function cveLoadIntoEditor(res, cveId, message, edOpts) {
 }
 
 async function cveLoadFromCveOrg(cveId, suppressErrors) {
+    var loadFeedback = new feedback(document.getElementById('editorContent'), 'spinner');
     try {
+
         const response = await fetch('https://cveawg.mitre.org/api/cve/' + cveId, {
             method: 'GET',
             credentials: 'omit',
@@ -962,15 +991,19 @@ async function cveLoadFromCveOrg(cveId, suppressErrors) {
         }
         console.error('Failed to fetch from CVE.org:', e);
         return null;
+    } finally {
+        loadFeedback.cancel();
     }
     return null;
 }
 
 
 async function cveLoad(cveId) {
-   // console.log('trying to load '+cveId);
+    console.log(new Date().toTimeString() + 'trying to load '+cveId, document.getElementById('editorContent'));
+
     var cveOrgRes = await cveLoadFromCveOrg(cveId, true);
     if (cveOrgRes) {
+        console.log(new Date().toTimeString() + 'loaded '+cveId);
         return cveOrgRes;
     }
 
@@ -1231,8 +1264,13 @@ async function cvePublishItems(items, onStatus, options) {
 }
 
 async function cvePost() {
-    var vr = filterADP(docEditor.validation_results);
-    if (vr && vr.length == 0) {
+    var postFeedback = new feedback(document.getElementById('post1'), 'text', 'Posting...');
+    try {
+        var vr = filterADP(docEditor.validation_results);
+        if (!(vr && vr.length == 0)) {
+            cveAlert('Please fill the required fields');
+            return;
+        }
         if (!(await cveEnsurePublishSession())) {
             return;
         }
@@ -1314,8 +1352,8 @@ async function cvePost() {
         } catch (e) {
             portalErrorHandler(e);
         }
-    } else {
-        cveAlert('Please fill the required fields');
+    } finally {
+        postFeedback.cancel();
     }
 }
 

@@ -1697,31 +1697,65 @@ div[data-schemapath*=".cvss"] .rdg .form-control:first-child input[value="NOT_DE
     background-image: url(logo.svg);
     content: "";
     display: block;
-    width: 120px;
-    height: 120px;
-    background-size: 50px;
+    width: 190px;
+    height: 190px;
+    backdrop-filter: blur(10px);
+    background-size: 70px;
     background-repeat: no-repeat;
     background-position: center center;
     opacity: 0;
+    padding: 4px;
+    border-radius: 50%;
     animation: fadeIn 500ms ease 1;
     animation-delay: 1s;
     animation-fill-mode: forwards;
 }
 
 .spinner::before {
-    border: 10px solid var(--bg2);
+    border: 20px solid var(--bg2);
     /* Light grey */
-    border-top: 10px solid var(--acc);
+    border-top: 20px solid var(--acc);
     /* Blue */
     border-radius: 50%;
     content: "";
     display: block;
-    width: 100px;
-    height: 100px;
+    width: 150px;
+    height: 150px;
     text-align: center;
     animation: spin 1s linear infinite;
     animation-delay: 1s;
     animation-fill-mode: forwards;
+}
+
+.feedback-overlay-target {
+    position: relative;
+}
+
+.feedback-overlay-target--minheight {
+    min-height: 300px;
+}
+
+.feedback-spinner-holder,
+.feedback-error-holder {
+    position: fixed;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 999;
+}
+
+.feedback-spinner-holder .feedback-spinner {
+    opacity: 1;
+    animation: none;
+}
+
+.feedback-spinner-holder .feedback-spinner::before {
+    animation-delay: 0s;
 }
 
 @keyframes spin {

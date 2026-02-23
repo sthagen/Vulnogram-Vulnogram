@@ -421,6 +421,7 @@ function loadSoloDocFallback(docId, done, loadNewDoc) {
         return;
     }
     try {
+        
         var result = cveLoad(docId);
         if (result && typeof result.then === 'function') {
             result.then(function () {

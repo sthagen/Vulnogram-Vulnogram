@@ -68,7 +68,7 @@ block append topHeaderLeft
     form.bor.out.nobr.vgi-cve(onsubmit="cveSelectLoad(event);return false;")
         input.txt#cveEditable(type="search",name="id",list="editablelist",placeholder="CVE-yyyy-nnnn",pattern=".*CVE-[0-9]{4}-[0-9]{4,12}.*",size=16,title="Load CVE from CVE.org",required)
         datalist#editablelist
-        button.fbn.vgi-import(type="submit",tile="Import from cve.org") Load
+        button#load1.fbn.vgi-import(type="submit",title="Import from cve.org") Load
 
 block customtabs
         input.tab(name='tabs', type='radio', id='advisoryTab', value="4")
