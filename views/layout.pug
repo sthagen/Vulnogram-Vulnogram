@@ -60,7 +60,7 @@ html
                   label#smallScreenMenu.lbl.vgi-menu(for="sidebarToggle") 
                   if schemaName && confOpts && confOpts[schemaName] && !confOpts[schemaName].conf.readonly
                     if min
-                      a.fbn.sfe(href='./') NEW 
+                      a.fbn.sfe(href=(schemaName == 'cve' ? './' : './'+ schemaName)) NEW 
                         = confOpts[schemaName].conf.name ? confOpts[schemaName].conf.name : schemaName
                     else
                       a.fbn.sfe(href='/' + schemaName + '/new') NEW 
