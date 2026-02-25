@@ -10,7 +10,7 @@ block append head
 
 block prepend topHeaderLeft
     if !min
-        a.rbtn.vgi-back(href=(confOpts[schemaName].conf.uri? confOpts[schemaName].conf.uri : '/' + schemaName + '/' ), title=confOpts[schemaName].conf.title)
+        a.rbtn.vgi-larrow(href=(confOpts[schemaName].conf.uri? confOpts[schemaName].conf.uri : '/' + schemaName + '/' ), title=confOpts[schemaName].conf.title)
 
 block append topHeaderLeft
     if !confOpts[schemaName].conf.readonly
@@ -176,7 +176,7 @@ block logolink
     a.vgi-logo(href="https://github.com/Vulnogram/Vulnogram") Vulnogram Project
 
 mixin alertDialog
-    dialog.bor.rnd.shd.pad2#alertDialog
+    dialog.bor.rndx.shd.pad2#alertDialog
       center
         form(onsubmit="event.preventDefault();return false;")
             h2.vgi-alert#alertMessage

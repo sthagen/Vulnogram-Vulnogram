@@ -1,41 +1,47 @@
 {
-  "generatedAt": "2026-02-18T21:23:54Z",
+  "generatedAt": "2026-02-25T06:49:29Z",
   "screenshots": {
     "01-access-editor": {
       "file": "01-access-editor.png",
-      "hash": "3da626bb0cc9e96a4da541acc4711d49fa955a5ce90e62d11cb5ab89f962c18c",
+      "hash": "d3fcb4a18edf1c42aeb9dc605d7b77af3dca8cf992af264e034f2281025e0b85",
       "exists": true,
-      "updatedAt": "2026-02-18T21:21:35Z"
+      "updatedAt": "2026-02-25T06:48:17Z"
     },
     "02-portal-login": {
       "file": "02-portal-login.png",
-      "hash": "0a66dcf0020a2aae5271189d5d3a506a9c47af1c869ecd6114487e683d2e4c58",
+      "hash": "802987a20b4174d59e09eac0306dba262c2e1b59212df5858dde05853489e2f8",
       "exists": true,
-      "updatedAt": "2026-02-18T21:21:35Z"
+      "updatedAt": "2026-02-25T06:48:17Z"
     },
     "03-reserve-cve-ids": {
       "file": "03-reserve-cve-ids.png",
-      "hash": "b903b32a9ebe082a2c657466458a2c54bbef88a9a0bbf0febbd496ba1fb5a33a",
+      "hash": "1125b58e366755737c230bca13d6ee564665d39145a3c45e4d974ffedb3c9e9e",
       "exists": true,
-      "updatedAt": "2026-02-18T21:21:35Z"
+      "updatedAt": "2026-02-25T06:48:17Z"
     },
     "04-enter-cve-details": {
       "file": "04-enter-cve-details.png",
-      "hash": "dbeb24668ff58454bf231a5401d075eb5cc67ae1232adfbedee2346585101e76",
+      "hash": "6dc465d26cf23dc004ea546b010d59989029d3392be6c29d5088cecba1175c04",
       "exists": true,
-      "updatedAt": "2026-02-18T21:21:35Z"
+      "updatedAt": "2026-02-25T06:49:29Z"
     },
     "05-publish-cve": {
       "file": "05-publish-cve.png",
-      "hash": "94f553277a963c2e51207c8b87c5af697f18148080323202360d81b316a8c38d",
+      "hash": "f6dc72bd81ad81ef9c3fd637d15f5f7a7a538fb1cc54a4a9bc4d56348daada42",
       "exists": true,
-      "updatedAt": "2026-02-18T21:21:35Z"
+      "updatedAt": "2026-02-25T06:48:17Z"
+    },
+    "05b-publish-multiple-cve": {
+      "file": "05b-publish-multiple-cve.png",
+      "hash": "8787401ef2cc343ac5573980c8d959816462c7c8e4220693090adbcd744eba49",
+      "exists": true,
+      "updatedAt": "2026-02-25T06:49:29Z"
     },
     "06-admin-user-management": {
       "file": "06-admin-user-management.png",
-      "hash": "b0d82a91a304fffb70671d5024553a7d08a300f3991441690e999f8d2f7a6bbf",
+      "hash": "b7e9aaf91f6f95133f2f4402b611fe08253a06121127660cae278ffcc5285674",
       "exists": true,
-      "updatedAt": "2026-02-18T21:21:35Z"
+      "updatedAt": "2026-02-25T06:48:17Z"
     }
   }
 }

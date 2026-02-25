@@ -233,7 +233,7 @@ function renderDraftButtons(target, entries) {
             Meta.appendChild(document.createTextNode(time));
         }
         var del = document.createElement('span');
-            del.className = 'sbn fbn vgi-x';
+            del.className = 'sbn fbn vgi-del';
             del.title = 'Delete draft '+entry.id;
         del.addEventListener('click', function (e) {
             e.preventDefault();
@@ -272,6 +272,12 @@ function refreshDraftsList() {
         }
         if (draftsUi.count) {
             draftsUi.count.textContent = entries.length ? entries.length : '';
+        }
+        var draftPublishDialog = document.getElementById('draftPublishDialog');
+        if (draftPublishDialog && draftPublishDialog.open && typeof cveRefreshDraftPublishDialog === 'function') {
+            Promise.resolve(cveRefreshDraftPublishDialog()).catch(function (e) {
+                console.warn('draft publish refresh error:', e);
+            });
         }
     }).catch(function (e) {
         console.warn('draftsCache list error:', e);

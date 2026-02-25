@@ -78,6 +78,10 @@ dialog {
     border-radius: 5px !important;
 }
 
+.rndx {
+    border-radius: 12px !important;
+}
+
 .ins {
     box-shadow: inset 0px 1px 4px rgba(0, 0, 0, 0.2);
 }
@@ -109,7 +113,7 @@ hr.bort {
 }
 
 .btm {
-    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    border-bottom: 1px solid var(--bor);
 }
 
 .ban {
@@ -1013,6 +1017,11 @@ input.tab[type="radio"]+.lbl:focus {
     border-radius: 17px;
 }
 
+.sfe:focus, .sfe:active{
+    background-color: var(--acc);
+    color: var(--wht);
+}
+
 .sec {
     background-color: var(--bg2);
 }
@@ -1825,11 +1834,13 @@ div[data-schemapath*=".cvss"] .rdg .form-control:first-child input[value="NOT_DE
     position: sticky;
     top: 0;
     height: 100vh;
+    padding-right: 4px;
 }
 
 .sidebar-head {
     padding: 0.5em 0;
     overflow-x: hidden;
+    min-height: 36px;
     border-bottom: 1px solid var(--bor);
     display: flex;
     align-items: center;
@@ -1842,8 +1853,8 @@ div[data-schemapath*=".cvss"] .rdg .form-control:first-child input[value="NOT_DE
     flex-direction: column;
     gap: 0.5em;
     flex: 1;
-    overflow-x: hidden;
-    overflow-y: hidden;
+    overflow-x: scroll;
+    overflow-y: scroll;
     padding: 0.5em 0;
 }
 

@@ -37,6 +37,11 @@ Use **Publish CVE** to submit the record to the currently selected portal. In te
 ![Vulnogram header with Publish CVE action](./screenshots/05-publish-cve.png)
 *Top action bar with publish control.*
 
+To publish miltiple CVE Drfats at the same time, click **Manage** button in the Drafts section on the sidebar. Select and publish the drafts that need to be published. Successfully published CVE entries get removed from the Drafts list.
+
+![Vulnogram.org manage and publish multiple CVEs](./screenshots/05b-publish-multiple-cve.png)
+*Top action bar with publish control.*
+
 ## 6. Manage Users and API Keys (Admin)
 
 Organization administrators can open **Users** in the portal view to add users, update profile and role attributes, disable accounts, and reset API secrets.

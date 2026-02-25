@@ -33,7 +33,7 @@ block append sidebarNav
 
 block draftsSummaryActions
     if min
-        a#draftPublishOpenBtn.right.fbn.vgi-export(href="#" title="Publish multiple cached drafts" onclick="event.stopPropagation();return cveOpenDraftPublishDialog(event);") Publish
+        a#draftPublishOpenBtn.right.sfe.fbn.vgi-export(href="#" title="Manage and publish cached drafts" onclick="event.stopPropagation();return cveOpenDraftPublishDialog(event);") Manage
 
 block append sidebarSections
     a#cvePortalNav.lbl.vgi-org(href="#", onclick="return showCvePortal(event);") CVE Portal
@@ -80,52 +80,51 @@ block customtabs
             div.render(id="render")
 
 block prepend content
-    dialog.dlg.bor.rnd.shd#cveErrorsModal
+    dialog.dlg.bor.rndx.shd#cveErrorsModal
         #cveErrors
         center.pad2
             input.btn.sfe(type="reset" onclick="document.getElementById('cveErrorsModal').close()" value="OK")
-    dialog.dlg.bor.rnd.shd#draftPublishDialog
+    dialog.dlg.bor.rndx.shd#draftPublishDialog
         header.ban.sec.pad
-            b.lbl.vgi-edit Draft Publishing
-            a.right.rbtn.vgi-x(title="Close draft publishing" onclick="this.closest('dialog').close()")
+            b.lbl.vgi-edit Drafts Manager
+            a.right.rbtn.vgi-x(title="Close drafts manager" onclick="this.closest('dialog').close()")
         .pad2
-            p.lbl#draftPublishStatus Select drafts with 0 warnings to publish.
-            table#draftPublishTable.vtbl
+            p
+                button.btn.sfe.vgi-export(type="button" onclick="return cvePublishSelectedDrafts(event);") Publish Selected
+                span.lbl#draftPublishStatus Select drafts with 0 errors to publish, or click an ID to open.
+            table#draftPublishTable.vtbl.sortable
                 thead
                     tr
-                        th
+                        th(data-sort-method='none')
                             input(type="checkbox" onclick="cveDraftPublishToggleAll(this.checked)")
-                        th Draft ID
+                        th(data-sort-method='number') Draft ID
                         th Title
-                        th CVSS
-                        th Warnings
+                        th(data-sort-method='number') CVSS
+                        th Public at
                         th Updated
-                        th Status
+                        th(data-sort-method='none') Action
                 tbody#draftPublishRows
         center.pad2
-            button.btn.sfe.vgi-export(type="button" onclick="return cvePublishSelectedDrafts(event);") Publish Selected
             | 
-            button.btn.vgi-reuse(type="button" onclick="cveRefreshDraftPublishDialog()") Refresh
-            | 
-            button.btn(type="button" onclick="this.closest('dialog').close()") Close
+            button.btn.vgi-x(type="button" onclick="this.closest('dialog').close()") Close
     +showSecret
     +userAddDialog
     +userEditDialog
     +cpeNameOverrideDialog
-    dialog.dlg.bor.rnd.shd#cvePortalDialog
+    dialog.dlg.bor.rndx.shd#cvePortalDialog
         header.ban.sec.pad
             b.lbl.vgi-org CVE CNA Portal
             a.right.rbtn.vgi-x(title="Close CVE Portal" onclick="return closeCvePortal(event);")
         #port
 
 mixin userAddDialog
-    dialog.dlg.bor.rnd.shd#userAddDialog
+    dialog.dlg.bor.rndx.shd#userAddDialog
         +dlgHeader('vgi-user','Add a new user')
         form.gap(onsubmit="event.preventDefault();cveAddUser(this)")
             +userEdit('Add user')
 
 mixin userEditDialog
-    dialog.dlg.bor.rnd.shd#userEditDialog
+    dialog.dlg.bor.rndx.shd#userEditDialog
         +dlgHeader('vgi-user','Update user details')
         form#userEditForm.gap(onsubmit="event.preventDefault();cveUpdateUser(this)")
             +userEdit('Update')
@@ -151,7 +150,7 @@ mixin userEdit(label)
         button.gap.btn.vgi-reuse(onclick="cveUserKeyReset(this)") Reset API Key
 
 mixin showSecret
-    dialog.dlg.bor.rnd.shd#secretDialog
+    dialog.dlg.bor.rndx.shd#secretDialog
       +dlgHeader('vgi-lock','IMPORTANT! New API Secret Key generated!')
       center.gap
         form#secretDialogForm(onsubmit="event.preventDefault();this.reset();this.closest('dialog').close();return false")
@@ -168,7 +167,7 @@ mixin showSecret
                 input.btn.sfe(type="reset" onclick="this.closest('dialog').close()" value="OK")
 
 mixin cpeNameOverrideDialog
-    dialog.dlg.bor.rnd.shd#cpeNameOverrideDialog
+    dialog.dlg.bor.rndx.shd#cpeNameOverrideDialog
         +dlgHeader('vgi-cog','CPE name and type alias mappings')
         form.gap(onsubmit="event.preventDefault();return false;")
             table#cpeNameOverrideTable

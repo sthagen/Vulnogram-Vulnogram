@@ -531,7 +531,8 @@ function portalErrorHandler(e) {
     }
 
     if (isNoSession || isUnauthorized) {
-        if (csClient && typeof csClient.logout === 'function') {
+        var loginErrNode = document.getElementById("loginErr");
+        if (!loginErrNode && csClient && typeof csClient.logout === 'function') {
             csClient.logout().catch(function () { });
         }
         clearPortalSessionCache();
@@ -1379,21 +1380,24 @@ function cveTeamGetStatusNode(cveId, createIfMissing) {
     if (!row) {
         return null;
     }
-    var idCell = row.querySelector('td.ID');
-    if (!idCell) {
+    var titleCell = row.querySelector('td.title, td.Title, td.TITLE');
+    if (!titleCell) {
         var cells = row.querySelectorAll('td');
-        if (cells.length > 1) {
-            idCell = cells[1];
+        if (cells.length > 0) {
+            var logicalTitleIndex = row.querySelector('td.rowCheckLabel') ? 2 : 1;
+            if (cells.length > logicalTitleIndex) {
+                titleCell = cells[logicalTitleIndex];
+            }
         }
     }
-    if (!idCell) {
+    if (!titleCell) {
         return null;
     }
-    var statusNode = idCell.querySelector('.teamPublishState');
+    var statusNode = titleCell.querySelector('.teamPublishState');
     if (!statusNode && createIfMissing) {
         statusNode = document.createElement('small');
         statusNode.className = 'teamPublishState block sml';
-        idCell.appendChild(statusNode);
+        titleCell.appendChild(statusNode);
     }
     return statusNode;
 }
@@ -1417,6 +1421,8 @@ function cveTeamSetRowStatus(cveId, text, isError) {
 
 var cveDraftPublishEntries = [];
 var cveDraftPublishStatusMap = {};
+var cveDraftPublishRetainedRowsMap = {};
+var cveDraftPublishTableSorter = null;
 
 function cveDraftExtractTitle(doc) {
     if (!doc || !doc.containers || !doc.containers.cna) {
@@ -1448,32 +1454,28 @@ function cveDraftExtractCvss(doc) {
     if (!doc || !doc.containers || !doc.containers.cna || !Array.isArray(doc.containers.cna.metrics)) {
         return '';
     }
-    var seen = {};
-    var scores = [];
     var metricKeys = ['cvssV4_0', 'cvssV3_1', 'cvssV3_0', 'cvssV2_0'];
-    doc.containers.cna.metrics.forEach(function (metric) {
+    for (var i = 0; i < doc.containers.cna.metrics.length; i++) {
+        var metric = doc.containers.cna.metrics[i];
         if (!metric || typeof metric !== 'object') {
-            return;
+            continue;
         }
-        metricKeys.forEach(function (key) {
+        for (var j = 0; j < metricKeys.length; j++) {
+            var key = metricKeys[j];
             var cvss = metric[key];
             if (!cvss || cvss.baseScore === undefined || cvss.baseScore === null || cvss.baseScore === '') {
-                return;
+                continue;
             }
-            var version = cvss.version ? String(cvss.version) : key.replace('cvssV', '').replace('_', '.');
-            var score = String(cvss.baseScore);
-            var value = 'v' + version + ':' + score;
-            if (cvss.baseSeverity) {
-                value += ' ' + String(cvss.baseSeverity);
+            var score = Number(cvss.baseScore);
+            if (isNaN(score)) {
+                continue;
             }
-            if (seen[value]) {
-                return;
-            }
-            seen[value] = true;
-            scores.push(value);
-        });
-    });
-    return scores.join(', ');
+            var severity = cvssjs.severityLevel(score);
+            var scoreText = String(cvss.baseScore);
+            return '<b class="tag CVSS ' + severity + '">' + scoreText + '</b>';
+        }
+    }
+    return '';
 }
 
 function cveDraftCanPublish(entry) {
@@ -1487,19 +1489,49 @@ function cveDraftCanPublish(entry) {
 }
 
 function cveDraftPublishSetStatus(entryId, text, isError) {
-    cveDraftPublishStatusMap[entryId] = {
-        text: text || '',
-        isError: !!isError
-    };
-    var statusCell = document.getElementById('draftPublishState-' + entryId);
-    if (!statusCell) {
+    if (!text) {
+        delete cveDraftPublishStatusMap[entryId];
+    } else {
+        cveDraftPublishStatusMap[entryId] = {
+            text: text,
+            isError: !!isError
+        };
+    }
+    var titleCell = document.getElementById('draftPublishTitle-' + entryId);
+    if (!titleCell) {
         return;
     }
-    statusCell.innerText = text || '';
+    var statusNode = titleCell.querySelector('.draftPublishState');
+    if (!statusNode && text) {
+        statusNode = document.createElement('small');
+        statusNode.className = 'draftPublishState block sml';
+        titleCell.appendChild(statusNode);
+    }
+    if (!statusNode) {
+        return;
+    }
+    if (!text) {
+        statusNode.remove();
+        return;
+    }
+    var safeText = String(text).replace(/[&<>"']/g, function (ch) {
+        return {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[ch];
+    });
+    safeText = safeText.replace(/CVE-\d{4}-\d{4,12}/gi, function (idText) {
+        var cveId = idText.toUpperCase();
+        return '<a href="https://vulnogram.org/seaview/?' + encodeURIComponent(cveId) + '" target="_blank" rel="noopener noreferrer">' + cveId + '</a>';
+    });
+    statusNode.innerHTML = safeText;
     if (isError) {
-        statusCell.classList.add('tred');
+        statusNode.classList.add('tred');
     } else {
-        statusCell.classList.remove('tred');
+        statusNode.classList.remove('tred');
     }
 }
 
@@ -1529,10 +1561,6 @@ async function cveRefreshDraftPublishDialog() {
     if (!soloMode) {
         return;
     }
-    if (typeof draftsCache === 'undefined' || !draftsCache || !draftsCache.getAll) {
-        cveDraftPublishSetSummary('Draft cache is unavailable.', true);
-        return;
-    }
     var tbody = document.getElementById('draftPublishRows');
     if (!tbody) {
         return;
@@ -1545,31 +1573,53 @@ async function cveRefreshDraftPublishDialog() {
         });
         entries.sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
         cveDraftPublishEntries = entries;
-        var nextStatusMap = {};
+        var entryById = {};
         entries.forEach(function (entry) {
+            entryById[entry.id] = true;
+        });
+        var retainedEntries = Object.keys(cveDraftPublishRetainedRowsMap).map(function (id) {
+            return cveDraftPublishRetainedRowsMap[id];
+        }).filter(function (entry) {
+            return entry && entry.id && !entryById[entry.id];
+        });
+        retainedEntries.sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
+        var allEntries = entries.concat(retainedEntries);
+        var nextStatusMap = {};
+        allEntries.forEach(function (entry) {
             if (entry && entry.id && cveDraftPublishStatusMap[entry.id]) {
                 nextStatusMap[entry.id] = cveDraftPublishStatusMap[entry.id];
             }
         });
         cveDraftPublishStatusMap = nextStatusMap;
         tbody.textContent = '';
-        if (entries.length == 0) {
+        if (allEntries.length == 0) {
             var emptyRow = document.createElement('tr');
             var emptyCell = document.createElement('td');
             emptyCell.colSpan = 7;
             emptyCell.innerText = 'No drafts found in local cache.';
             emptyRow.appendChild(emptyCell);
             tbody.appendChild(emptyRow);
+            var emptyTable = document.getElementById('draftPublishTable');
+            if (!cveDraftPublishTableSorter) {
+                cveDraftPublishTableSorter = new Tablesort(emptyTable);
+            } else {
+                cveDraftPublishTableSorter.refresh();
+            }
             cveDraftPublishSetSummary('No drafts found.');
             return;
         }
         var readyCount = 0;
-        entries.forEach(function (entry) {
-            var canPublish = cveDraftCanPublish(entry);
+        allEntries.forEach(function (entry) {
+            var isRetainedPublished = entry.retainedPublished === true;
+            var warningCount = isRetainedPublished ? 0 : (typeof entry.errorCount === 'number' ? entry.errorCount : 0);
+            var canPublish = !isRetainedPublished && cveDraftCanPublish(entry);
             if (canPublish) {
                 readyCount++;
             }
             var tr = document.createElement('tr');
+            if (warningCount > 0) {
+                tr.classList.add('dis');
+            }
 
             var tdSelect = document.createElement('td');
             var cb = document.createElement('input');
@@ -1582,29 +1632,88 @@ async function cveRefreshDraftPublishDialog() {
             tr.appendChild(tdSelect);
 
             var tdId = document.createElement('td');
-            tdId.innerText = entry.id;
+            var idLink = document.createElement('a');
+            idLink.className = 'lbl';
+            idLink.innerText = entry.id;
+            if (isRetainedPublished) {
+                idLink.href = 'https://vulnogram.org/seaview/?' + encodeURIComponent(entry.id);
+                idLink.target = '_blank';
+                idLink.rel = 'noopener noreferrer';
+                idLink.title = 'Open published CVE ' + entry.id + ' in seaview';
+            } else {
+                idLink.href = '#';
+                idLink.title = 'Open draft ' + entry.id;
+                idLink.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    idLink.closest('dialog').close();
+                    draftsUi.toggle.checked = true;
+                    loadDraftFromCache(entry.id, false);
+                });
+            }
+            tdId.appendChild(idLink);
+            var warningBadge = document.createElement('span');
+            warningBadge.className = 'bdg';
+            warningBadge.title = String(warningCount);
+            warningBadge.innerText = String(warningCount);
+            tdId.appendChild(document.createTextNode(' '));
+            tdId.appendChild(warningBadge);
             tr.appendChild(tdId);
 
             var tdTitle = document.createElement('td');
+            tdTitle.id = 'draftPublishTitle-' + entry.id;
             var title = cveDraftExtractTitle(entry.doc);
             tdTitle.innerText = title || '';
             if (title) {
                 tdTitle.title = title;
             }
+            var status = cveDraftPublishStatusMap[entry.id];
+            if (status && status.text) {
+                var titleStatus = document.createElement('small');
+                titleStatus.className = 'draftPublishState block sml';
+                var titleSafeText = String(status.text).replace(/[&<>"']/g, function (ch) {
+                    return {
+                        '&': '&amp;',
+                        '<': '&lt;',
+                        '>': '&gt;',
+                        '"': '&quot;',
+                        "'": '&#39;'
+                    }[ch];
+                });
+                titleSafeText = titleSafeText.replace(/CVE-\d{4}-\d{4,12}/gi, function (idText) {
+                    var cveId = idText.toUpperCase();
+                    return '<a href="https://vulnogram.org/seaview/?' + encodeURIComponent(cveId) + '" target="_blank" rel="noopener noreferrer">' + cveId + '</a>';
+                });
+                titleStatus.innerHTML = titleSafeText;
+                if (status.isError) {
+                    titleStatus.classList.add('tred');
+                }
+                tdTitle.appendChild(titleStatus);
+            }
             tr.appendChild(tdTitle);
 
             var tdCvss = document.createElement('td');
-            tdCvss.innerText = cveDraftExtractCvss(entry.doc);
+            tdCvss.innerHTML = cveDraftExtractCvss(entry.doc);
             tr.appendChild(tdCvss);
 
-            var tdWarn = document.createElement('td');
-            var warningCount = typeof entry.errorCount === 'number' ? entry.errorCount : 0;
-            tdWarn.innerText = warningCount;
-            tr.appendChild(tdWarn);
+            var tdPublicOn = document.createElement('td');
+            var publicOn = entry && entry.doc && entry.doc.containers && entry.doc.containers.cna ? entry.doc.containers.cna.datePublic : null;
+            if (publicOn) {
+                var publicOnDate = new Date(publicOn);
+                if (!isNaN(publicOnDate.getTime())) {
+                    tdPublicOn.setAttribute('data-sort', String(publicOnDate.getTime()));
+                    if (typeof textUtil !== 'undefined' && textUtil && typeof textUtil.formatFriendlyDate === 'function') {
+                        tdPublicOn.innerText = textUtil.formatFriendlyDate(publicOnDate);
+                    } else {
+                        tdPublicOn.innerText = publicOnDate.toISOString();
+                    }
+                }
+            }
+            tr.appendChild(tdPublicOn);
 
             var tdTime = document.createElement('td');
             if (entry.updatedAt) {
                 var updatedAt = new Date(entry.updatedAt);
+                tdTime.setAttribute('data-sort', String(updatedAt.getTime()));
                 if (typeof textUtil !== 'undefined' && textUtil && typeof textUtil.formatFriendlyDate === 'function') {
                     tdTime.innerText = textUtil.formatFriendlyDate(updatedAt);
                 } else {
@@ -1613,21 +1722,47 @@ async function cveRefreshDraftPublishDialog() {
             }
             tr.appendChild(tdTime);
 
-            var tdStatus = document.createElement('td');
-            tdStatus.id = 'draftPublishState-' + entry.id;
-            var status = cveDraftPublishStatusMap[entry.id];
-            if (status && status.text) {
-                tdStatus.innerText = status.text;
-                if (status.isError) {
-                    tdStatus.classList.add('tred');
-                }
-            } else {
-                tdStatus.innerText = canPublish ? 'Ready' : 'Needs 0 warnings';
+            var tdActions = document.createElement('td');
+            tdActions.style.textAlign = 'right';
+            if (!isRetainedPublished) {
+                var deleteBtn = document.createElement('button');
+                deleteBtn.type = 'button';
+                deleteBtn.className = 'sbn fbn vgi-del';
+                deleteBtn.title = 'Delete draft ' + entry.id;
+                deleteBtn.setAttribute('aria-label', 'Delete draft ' + entry.id);
+                deleteBtn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    cveDraftPublishSetStatus(entry.id, '');
+                    cveDraftPublishSetSummary('Deleting draft ' + entry.id + '...');
+                    draftsCache.cancelSave();
+                    Promise.resolve(draftsCache.remove(entry.id)).then(function () {
+                        return cveRefreshDraftPublishDialog();
+                    }).then(function () {
+                        cveDraftPublishSetSummary('Deleted draft ' + entry.id + '.');
+                    }).catch(function (err) {
+                        cveDraftPublishSetSummary(cvePublishErrorMessage(err), true);
+                    });
+                });
+                tdActions.appendChild(deleteBtn);
             }
-            tr.appendChild(tdStatus);
+            tr.appendChild(tdActions);
             tbody.appendChild(tr);
         });
-        cveDraftPublishSetSummary('Found ' + entries.length + ' drafts. Ready to publish: ' + readyCount + '.');
+        var draftTable = document.getElementById('draftPublishTable');
+        if (!cveDraftPublishTableSorter) {
+            cveDraftPublishTableSorter = new Tablesort(draftTable);
+        } else {
+            cveDraftPublishTableSorter.refresh();
+        }
+        var summaryMessage = '';
+        if (entries.length > 0) {
+            summaryMessage = 'Found ' + entries.length + ' drafts. Ready to publish: ' + readyCount + '.' + (readyCount < entries.length ? ' Fix errors to publish the remaining.' : '');
+        }
+        if (retainedEntries.length > 0) {
+            summaryMessage += (summaryMessage ? ' ' : '') + 'Published references: ' + retainedEntries.length + '.';
+        }
+        cveDraftPublishSetSummary(summaryMessage);
     } catch (e) {
         cveDraftPublishSetSummary(cvePublishErrorMessage(e), true);
     }
@@ -1661,7 +1796,7 @@ async function cvePublishSelectedDrafts(event) {
     var selected = Array.from(document.querySelectorAll('#draftPublishRows input[name="draftPublishSelection"]:checked'))
         .map(function (el) { return el.value; });
     if (selected.length == 0) {
-        cveDraftPublishSetSummary('Select one or more drafts with 0 warnings.', true);
+        cveDraftPublishSetSummary('Select one or more drafts with 0 errors.', true);
         return false;
     }
     var selectedSet = new Set(selected);
@@ -1682,7 +1817,18 @@ async function cvePublishSelectedDrafts(event) {
         if (state == 'publishing') {
             cveDraftPublishSetStatus(entry.id, 'Publishing...');
         } else if (state == 'published') {
-            cveDraftPublishSetStatus(entry.id, 'Published');
+            cveDraftPublishRetainedRowsMap[entry.id] = {
+                id: entry.id,
+                doc: entry.doc,
+                errorCount: 0,
+                updatedAt: Date.now(),
+                retainedPublished: true
+            };
+            var publishStatusMessage = message || ('Successfully submitted ' + entry.id);
+            if (!/CVE-\d{4}-\d{4,12}/i.test(publishStatusMessage)) {
+                publishStatusMessage += ' ' + entry.id;
+            }
+            cveDraftPublishSetStatus(entry.id, publishStatusMessage);
         } else if (state == 'failed') {
             cveDraftPublishSetStatus(entry.id, message, true);
         } else if (state == 'skipped') {
@@ -1709,7 +1855,20 @@ async function cveReserveAndRender(yearOffset, number) {
         } else {
             m.innerText = "Failed to get a CVE ID";
         }
-        cvePortalFilter.reset();
+        var cveForm = document.getElementById("cvePortalFilter");
+        if (cveForm) {
+            if (cveForm.fstate) {
+                cveForm.fstate.value = 'RESERVED';
+            }
+            var reservedState = document.getElementById("chkres");
+            if (reservedState) {
+                reservedState.checked = true;
+            }
+            if (cveForm.y) {
+                cveForm.y.value = String(currentYear + (yearOffset ? yearOffset : 0));
+            }
+            cveForm.page = 0;
+        }
         await cveGetList();
         return r;
     } catch (e) {

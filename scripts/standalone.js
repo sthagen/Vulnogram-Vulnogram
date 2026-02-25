@@ -23,8 +23,8 @@ confOpts = {
     cvss4: optSet('cvss4', ['default'].concat(process.argv.slice(2))),
     seaview: {conf:{
         uri:'https://www.vulnogram.org/seaview/',
-        class:'vgi-search',
-        title: 'Search and Display CVEs',
+        class:'vgi-wave',
+        title: 'Search and View CVEs',
         name: 'Seaview - CVE Search',
     }}
 }
