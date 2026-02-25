@@ -3045,6 +3045,7 @@ function handleHistoryNavigation(event) {
     if (historySyncing) return;
     var state = event && event.state ? event.state : null;
     var targetId = state && state.docId ? state.docId : getDocIdFromLocation();
+    var fromUrlDocParam = soloMode && targetId && getDocIdFromSearch() === targetId;
     var currentId = null;
     try {
         currentId = getDocID();
@@ -3077,6 +3078,12 @@ function handleHistoryNavigation(event) {
         draftsCache.get(targetId).then(function (entry) {
             if (entry && entry.doc) {
                 applyDraftEntry(entry);
+                if (fromUrlDocParam) {
+                    var modifiedAt = (typeof entry.updatedAt === 'number') ? entry.updatedAt : Date.parse(entry.updatedAt || '');
+                    if (!isNaN(modifiedAt) && ((Date.now() - modifiedAt) >= (6 * 60 * 60 * 1000))) {
+                        showAlert('A copy of '+ targetId + ' was found in drafts', 'Loaded the document that existed in the browser cache. If you want to load it from the server, delete the draft and try again.');
+                    }
+                }
                 done();
                 return;
             }

@@ -243,8 +243,7 @@
     },
     "orgId": {
       "description": "A UUID for an organization participating in the CVE program. This UUID can be used to lookup the organization record in the user registry service.",
-      "$ref": "#/definitions/uuidType",
-      "template": "csCache && csCache.orgInfo ?csCache.orgInfo.UUID:'00000000-0000-4000-9000-000000000000'"
+      "$ref": "#/definitions/uuidType"
     },
     "userId": {
       "description": "A UUID for a user participating in the CVE program. This UUID can be used to lookup the user record in the user registry service.",
@@ -957,8 +956,7 @@
           "description": "The container provider's organizational UUID.",
           "options": {
             "hidden": true
-          },
-          "template": "csCache.orgInfo?csCache.orgInfo.UUID:'00000000-0000-4000-9000-000000000000'"
+          }
         },
         "shortName": {
           "$ref": "#/definitions/shortName",
@@ -1250,21 +1248,68 @@
           "orgId": "00000000-0000-4000-9000-000000000000"
         }
       },
+      "links": [
+        {
+          "place": "header",
+          "class": "indent fbn sfe vgi-export",
+          "style": "",
+          "target": false,
+          "href": "'javascript:postADP(' + JSON.stringify(context.self && context.self.providerMetadata ? context.self.providerMetadata.orgId : null) + ')'",
+          "title": "Post this ADP information ",
+          "rel": "'Post this information'"
+        }
+      ],
       "properties": {
         "providerMetadata": {
-          "$ref": "#/definitions/providerMetadata"
+          "$ref": "#/definitions/providerMetadata",
+          "allOf": [
+            {
+              "if": {
+                "required": ["shortName"]
+              },
+              "then": {
+                "properties": {
+                  "shortName": {
+                    "$ref": "#/definitions/shortName",
+                    "title": "ADP Short Name",
+                    "readOnly": true,
+                    "options": {
+                      "hidden": false,
+                      "class": "dis",
+                      "formClass": "lni dis gap"
+                    }
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "shortName": {
+                    "$ref": "#/definitions/shortName",
+                    "options": { "hidden": true }
+                  }
+                }
+              }
+            }
+          ]
         },
         "datePublic": {
+          "title": "Date Public",
+          "options": {
+            "class":"vgi-cal"
+          },
           "$ref": "#/definitions/timestamp",
           "description": "If known, the date/time the vulnerability was disclosed publicly."
         },
         "title": {
           "type": "string",
+          "title": "ADP Information Title",
           "description": "Short english language title - if the description is long we may want a short title to refer to.",
           "minLength": 1,
           "maxLength": 256,
           "options": {
-            "grid_columns": 12
+            "class": "vgi-title",
+            "grid_columns": 10,
+            "formClass": "lni"
           }
         },
         "problemTypes": {
@@ -1279,6 +1324,7 @@
         },
         "descriptions": {
           "$ref": "#/definitions/descriptions",
+          "default": [],
           "minItems":0
         },
         "affected": {
@@ -3740,7 +3786,7 @@
             "adp": {
               "title": "Information from Authorized Data Providers (ADP) - experimental!",
               "options": {
-                "class": "vgi-alert"
+                "class": "vgi-info"
               },
               "type": "array",
               "items": {

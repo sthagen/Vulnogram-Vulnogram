@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-02-25T06:49:29Z",
+  "generatedAt": "2026-02-25T20:17:06Z",
   "screenshots": {
     "01-access-editor": {
       "file": "01-access-editor.png",
@@ -21,9 +21,9 @@
     },
     "04-enter-cve-details": {
       "file": "04-enter-cve-details.png",
-      "hash": "6dc465d26cf23dc004ea546b010d59989029d3392be6c29d5088cecba1175c04",
+      "hash": "9f75a7d63c081b1518e3745ced79df1f8f5643c6cab801950aed59cb659bcade",
       "exists": true,
-      "updatedAt": "2026-02-25T06:49:29Z"
+      "updatedAt": "2026-02-25T20:17:06Z"
     },
     "05-publish-cve": {
       "file": "05-publish-cve.png",
@@ -33,9 +33,9 @@
     },
     "05b-publish-multiple-cve": {
       "file": "05b-publish-multiple-cve.png",
-      "hash": "8787401ef2cc343ac5573980c8d959816462c7c8e4220693090adbcd744eba49",
+      "hash": "ffc6a53fba2bd682093698a6bf421530b96cb1a2779ed459cc1d6dab19bd2fa8",
       "exists": true,
-      "updatedAt": "2026-02-25T06:49:29Z"
+      "updatedAt": "2026-02-25T20:17:06Z"
     },
     "06-admin-user-management": {
       "file": "06-admin-user-management.png",

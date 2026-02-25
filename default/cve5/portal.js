@@ -1358,6 +1358,38 @@ async function cvePost() {
     }
 }
 
+async function postADP(orgID) {
+    try {
+        var currentOrgId = csCache && csCache.orgInfo ? csCache.orgInfo.UUID : null;
+        if (!currentOrgId) {
+            csCache.orgInfo = await csClient.getOrgInfo();
+            currentOrgId = csCache.orgInfo ? csCache.orgInfo.UUID : null;
+        }
+        if (currentOrgId != orgID && orgID != '00000000-0000-4000-9000-000000000000') {
+            cveAlert('This ADP information is not from Current CNA');
+            return;
+        }
+        var j = await mainTabGroup.getValue();
+        var cveId = j && j.cveMetadata ? j.cveMetadata.cveId : null;
+        var adp = j && j.containers && Array.isArray(j.containers.adp) ? j.containers.adp : [];
+        var matches = adp.filter(function (a) {
+            return a && a.providerMetadata && a.providerMetadata.orgId == orgID;
+        });
+        if (matches.length > 1) {
+            cveAlert('Error posting ADP', 'Multiple ADP information found for this CNA. Delete extras and try again.');
+            return;
+        }
+        if (matches.length == 1) {
+            if (!(await cveEnsurePublishSession())) {
+                return;
+            }
+            await csClient.updateAdp(cveId, { adpContainer: matches[0] });
+        }
+    } catch (e) {
+        cveAlert('Error posting ADP', cvePublishErrorMessage(e));
+    }
+}
+
 function cveTeamGetRowById(cveId) {
     if (!cveId) {
         return null;

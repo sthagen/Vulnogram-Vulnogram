@@ -406,6 +406,28 @@ module.exports = {
                     });*/
                 }
             }
+            if (path == "root.containers.adp") {
+                if (value && Array.isArray(value)) {
+                    var seenOrgIds = {};
+                    for (var i = 0; i < value.length; i++) {
+                        var orgId = value[i]
+                            && value[i].providerMetadata
+                            && value[i].providerMetadata.orgId;
+                        if (!orgId) {
+                            continue;
+                        }
+                        if (seenOrgIds[orgId] != undefined) {
+                            errors.push({
+                                path: path+'.' + i,
+                                property: 'format',
+                                message: 'An extra ADP containers from the same organization. Keep one.'
+                            });
+                        } else {
+                            seenOrgIds[orgId] = i;
+                        }
+                    }
+                }
+            }
             return errors;
         }
     ],
