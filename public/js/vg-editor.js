@@ -2054,37 +2054,7 @@ function upload(type, files, comment, cbs) {
 // Copyright (c) 2018 Chandan B N. All rights reserved.
 /* jshint esversion: 6 */
 /* jshint browser:true */
-/* jshint unused: false */
-/* globals csrfToken */
-/* globals ace */
-/* globals JSONEditor */
-/* globals pugRender */
-/* globals textUtil */
-/* globals schemaName */
-/* globals SimpleHtml */
-/* globals allowAjax */
-/* globals docSchema */
-/* globals custom_validators */
-/* globals initJSON */
-/* globals postUrl */
-/* globals getChanges */
-/* globals postURL */
-/* globals idpath */
-/* globals io */
-/* globals realtimeEnabled */
-/* globals realtimeConfig */
-/* globals draftsEnabled */
 
-
-var infoMsg = document.getElementById('infoMsg');
-var errMsg = document.getElementById('errMsg');
-var save1 = document.getElementById('save1');
-var editorLabel = document.getElementById('editorLabel');
-var iconTheme = 'vgi-';
-var starting_value = {};
-var sourceEditor;
-var draftsBaseline = null;
-var draftsFeatureEnabled = (typeof draftsEnabled === 'boolean') ? draftsEnabled : true;
 var feedbackStartDelay = 250;
 var feedbackTimeout = 20000;
 var feedbackTimeoutText = 'Error. Try again.';
@@ -2239,6 +2209,45 @@ feedback.prototype.cancel = function () {
         this.element.disabled = this.originalDisabled;
     }
 };
+
+if (typeof window !== 'undefined') {
+    window.feedback = feedback;
+}
+
+// Copyright (c) 2018 Chandan B N. All rights reserved.
+/* jshint esversion: 6 */
+/* jshint browser:true */
+/* jshint unused: false */
+/* globals csrfToken */
+/* globals ace */
+/* globals JSONEditor */
+/* globals pugRender */
+/* globals textUtil */
+/* globals schemaName */
+/* globals SimpleHtml */
+/* globals allowAjax */
+/* globals docSchema */
+/* globals custom_validators */
+/* globals initJSON */
+/* globals postUrl */
+/* globals getChanges */
+/* globals postURL */
+/* globals idpath */
+/* globals io */
+/* globals realtimeEnabled */
+/* globals realtimeConfig */
+/* globals draftsEnabled */
+
+
+var infoMsg = document.getElementById('infoMsg');
+var errMsg = document.getElementById('errMsg');
+var save1 = document.getElementById('save1');
+var editorLabel = document.getElementById('editorLabel');
+var iconTheme = 'vgi-';
+var starting_value = {};
+var sourceEditor;
+var draftsBaseline = null;
+var draftsFeatureEnabled = (typeof draftsEnabled === 'boolean') ? draftsEnabled : true;
 
 function parseOptionClasses(className) {
     var ret = {
@@ -2820,7 +2829,7 @@ function renderDraftButtons(target, entries) {
             Meta.appendChild(document.createTextNode(time));
         }
         var del = document.createElement('span');
-            del.className = 'sbn fbn vgi-x';
+            del.className = 'sbn fbn vgi-del';
             del.title = 'Delete draft '+entry.id;
         del.addEventListener('click', function (e) {
             e.preventDefault();
@@ -2859,6 +2868,12 @@ function refreshDraftsList() {
         }
         if (draftsUi.count) {
             draftsUi.count.textContent = entries.length ? entries.length : '';
+        }
+        var draftPublishDialog = document.getElementById('draftPublishDialog');
+        if (draftPublishDialog && draftPublishDialog.open && typeof cveRefreshDraftPublishDialog === 'function') {
+            Promise.resolve(cveRefreshDraftPublishDialog()).catch(function (e) {
+                console.warn('draft publish refresh error:', e);
+            });
         }
     }).catch(function (e) {
         console.warn('draftsCache list error:', e);
