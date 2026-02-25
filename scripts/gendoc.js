@@ -329,6 +329,174 @@ async function applyAction(page, action, context) {
       );
       break;
     }
+    case 'setAttribute': {
+      const selector = String(action.selector || '').trim();
+      const attribute = String(action.attribute || '').trim();
+      if (!selector || !attribute) {
+        throw new Error('setAttribute action requires "selector" and "attribute"');
+      }
+      if (!Object.prototype.hasOwnProperty.call(action, 'value')) {
+        throw new Error('setAttribute action requires "value"');
+      }
+      const value = String(action.value);
+      await page.evaluate(
+        ({ targetSelector, attributeName, attributeValue }) => {
+          const element = document.querySelector(targetSelector);
+          if (!element) {
+            throw new Error('Attribute target selector not found: ' + targetSelector);
+          }
+          element.setAttribute(attributeName, attributeValue);
+        },
+        {
+          targetSelector: selector,
+          attributeName: attribute,
+          attributeValue: value
+        }
+      );
+      break;
+    }
+    case 'seedDraftsCache': {
+      const entries = Array.isArray(action.entries) ? action.entries : [];
+      const clearExisting = action.clearExisting !== false;
+      await page.evaluate(
+        async ({ sampleEntries, shouldClear }) => {
+          function buildSampleDoc(entry, id) {
+            const title = String(entry.title || ('Sample draft ' + id));
+            const description = String(entry.description || title);
+            const score = Number(entry.score);
+            const hasScore = !isNaN(score);
+            const roundedScore = hasScore ? Number(score.toFixed(1)) : null;
+            const severity = !hasScore
+              ? null
+              : roundedScore >= 9
+                ? 'CRITICAL'
+                : roundedScore >= 7
+                  ? 'HIGH'
+                  : roundedScore >= 4
+                    ? 'MEDIUM'
+                    : 'LOW';
+            const publicDate = entry.publicDate
+              ? String(entry.publicDate)
+              : new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+            const cna = {
+              title: title,
+              descriptions: [
+                {
+                  lang: 'en',
+                  value: description
+                }
+              ],
+              affected: [
+                {
+                  vendor: 'Example Vendor',
+                  product: 'Example Product',
+                  versions: [
+                    {
+                      status: 'affected',
+                      version: '1.0'
+                    }
+                  ]
+                }
+              ],
+              references: [
+                {
+                  url: 'https://example.com/advisories/' + encodeURIComponent(id)
+                }
+              ],
+              datePublic: publicDate
+            };
+
+            if (hasScore) {
+              cna.metrics = [
+                {
+                  cvssV3_1: {
+                    version: '3.1',
+                    vectorString: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H',
+                    baseScore: roundedScore,
+                    baseSeverity: severity
+                  }
+                }
+              ];
+            }
+
+            return {
+              dataType: 'CVE_RECORD',
+              dataVersion: '5.1',
+              cveMetadata: {
+                cveId: id,
+                state: 'PUBLISHED',
+                assigningCna: 'example-cna'
+              },
+              containers: {
+                cna: cna
+              }
+            };
+          }
+
+          const start = Date.now();
+          while (!(window.draftsCache && typeof window.draftsCache.save === 'function')) {
+            if (Date.now() - start > 5000) {
+              throw new Error('window.draftsCache is unavailable');
+            }
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+
+          const cache = window.draftsCache;
+          if (typeof cache.cancelSave === 'function') {
+            cache.cancelSave();
+          }
+
+          if (
+            shouldClear &&
+            typeof cache.getAll === 'function' &&
+            typeof cache.remove === 'function'
+          ) {
+            const existing = await cache.getAll();
+            for (const entry of existing || []) {
+              if (entry && entry.id) {
+                await cache.remove(entry.id);
+              }
+            }
+          }
+
+          for (const entry of sampleEntries) {
+            if (!entry || !entry.id) {
+              continue;
+            }
+            const id = String(entry.id).trim();
+            if (!id) {
+              continue;
+            }
+            const errorCount = Number(entry.errorCount);
+            const doc =
+              entry.doc && typeof entry.doc === 'object'
+                ? entry.doc
+                : buildSampleDoc(entry, id);
+            await cache.save(id, doc, isNaN(errorCount) ? 0 : errorCount);
+          }
+        },
+        {
+          sampleEntries: entries,
+          shouldClear: clearExisting
+        }
+      );
+      break;
+    }
+    case 'openDraftPublishDialog': {
+      await page.evaluate(async () => {
+        if (typeof window.cveOpenDraftPublishDialog === 'function') {
+          await Promise.resolve(window.cveOpenDraftPublishDialog());
+          return;
+        }
+        const trigger = document.getElementById('draftPublishOpenBtn');
+        if (!trigger) {
+          throw new Error('Draft publish dialog trigger is unavailable');
+        }
+        trigger.click();
+      });
+      break;
+    }
     case 'loadCveDocument': {
       const cveId = String(action.cveId || '').trim();
       if (!cveId) {
@@ -1016,15 +1184,27 @@ async function getExistingScreenshotStatus(shot, screenshotsDir) {
 }
 
 function buildMarkdown(manifest, screenshotStatuses, generatedAt) {
+  function escapeHtmlAttribute(value) {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
   const title = manifest.title || 'Using Vulnogram with CVE Services';
   const sourcePdfTitle = manifest.sourcePdfTitle || 'Using Vulnogram with CVE Services';
   const sourcePdfDate = manifest.sourcePdfDate || 'unknown';
   const sourcePdf = manifest.sourcePdf;
+  const markdownStylesheet =
+    manifest.markdownStylesheet || 'https://vulnogram.org/1.0.0/css/min.css';
   const screenshotsDir = asPublicDocPath(manifest.screenshotsDir || 'screenshots');
   const sections = manifest.sections || [];
 
   const lines = [];
   lines.push('# ' + title);
+  lines.push('');
+  lines.push('<link rel="stylesheet" href="' + escapeHtmlAttribute(markdownStylesheet) + '" />');
   lines.push('');
   lines.push(
     'This guide is adapted from [' +
@@ -1052,7 +1232,13 @@ function buildMarkdown(manifest, screenshotStatuses, generatedAt) {
     for (const shot of sectionShots) {
       const status = screenshotStatuses.get(shot.id);
       const imagePath = './' + asPublicDocPath(path.join(screenshotsDir, shot.file));
-      lines.push('![' + shot.alt + '](' + imagePath + ')');
+      lines.push(
+        '<img src="' +
+          escapeHtmlAttribute(imagePath) +
+          '" alt="' +
+          escapeHtmlAttribute(shot.alt) +
+          '" class="bor rndx shd" />'
+      );
       if (shot.caption) {
         lines.push('*' + shot.caption + '*');
       }

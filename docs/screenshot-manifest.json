@@ -144,6 +144,12 @@
           "paddingY": 14
         },
         {
+          "action": "setAttribute",
+          "selector": "#cvePortalNav",
+          "attribute": "data-portal-status",
+          "value": "connected"
+        },
+        {
           "action": "waitForTimeout",
           "ms": 300
         }
@@ -172,6 +178,12 @@
         {
           "action": "loadCveDocument",
           "cveId": "CVE-2025-0001"
+        },
+        {
+          "action": "setAttribute",
+          "selector": "#cvePortalNav",
+          "attribute": "data-portal-status",
+          "value": "connected"
         },
         {
           "action": "waitForTimeout",
@@ -215,6 +227,97 @@
           "endOffsetY": 50
         },
         {
+          "action": "setAttribute",
+          "selector": "#cvePortalNav",
+          "attribute": "data-portal-status",
+          "value": "connected"
+        },
+        {
+          "action": "waitForTimeout",
+          "ms": 300
+        }
+      ]
+    },
+    {
+      "id": "05b-publish-multiple-cve",
+      "file": "05b-publish-multiple-cve.png",
+      "section": "publish",
+      "alt": "Vulnogram drafts manager dialog showing multiple cached CVE entries",
+      "caption": "Drafts Manager with sample cached CVE entries ready for bulk publish.",
+      "steps": [
+        {
+          "action": "setViewport",
+          "width": 1600,
+          "height": 900
+        },
+        {
+          "action": "goto"
+        },
+        {
+          "action": "waitForSelector",
+          "selector": "#draftPublishDialog",
+          "state": "attached"
+        },
+        {
+          "action": "setAttribute",
+          "selector": "#cvePortalNav",
+          "attribute": "data-portal-status",
+          "value": "connected"
+        },
+        {
+          "action": "waitForSelector",
+          "selector": "#draftsGroup",
+          "state": "attached"
+        },
+        {
+          "action": "setAttribute",
+          "selector": "#draftsGroup",
+          "attribute": "open",
+          "value": "open"
+        },
+        {
+          "action": "seedDraftsCache",
+          "clearExisting": true,
+          "entries": [
+            {
+              "id": "CVE-2025-7101",
+              "title": "Remote code execution in Example API Gateway",
+              "description": "Improper request deserialization in the management endpoint allows remote code execution.",
+              "score": 9.8,
+              "errorCount": 0
+            },
+            {
+              "id": "CVE-2025-7102",
+              "title": "SQL injection in Example Reporting Console",
+              "description": "Unsanitized query parameters in the reporting search endpoint permit SQL injection.",
+              "score": 8.1,
+              "errorCount": 0
+            },
+            {
+              "id": "CVE-2025-7103",
+              "title": "Authorization bypass in Example Tenant Manager",
+              "description": "A missing ownership check allows authenticated users to view unauthorized tenant data.",
+              "score": 6.5,
+              "errorCount": 2
+            },
+            {
+              "id": "CVE-2025-7104",
+              "title": "Stored cross-site scripting in Example Support Portal",
+              "description": "User supplied HTML is rendered without neutralization in support ticket comments.",
+              "score": 5.4,
+              "errorCount": 0,
+              "publicDate": "2026-04-15T12:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "action": "openDraftPublishDialog"
+        },
+        {
+          "action": "waitForSelector",
+          "selector": "#draftPublishDialog[open] #draftPublishRows tr"
+        },
+        {
           "action": "waitForTimeout",
           "ms": 300
         }
@@ -255,6 +358,12 @@
           "selector": "#cvePortalNav",
           "property": "background",
           "value": "var(--acc)"
+        },
+        {
+          "action": "setAttribute",
+          "selector": "#cvePortalNav",
+          "attribute": "data-portal-status",
+          "value": "connected"
         },
         {
           "action": "waitForTimeout",
