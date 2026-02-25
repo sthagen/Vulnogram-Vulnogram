@@ -169,6 +169,10 @@
             return this._middleware.put('cve/'.concat(id, '/cna'), undefined, schema);
         }
 
+        updateAdp(id, schema) {
+            return this._middleware.put('cve/'.concat(id, '/adp'), undefined, schema);
+        }
+
         createRejectedCve(id, schema) {
             return this._middleware.post('cve/'.concat(id, '/reject'), undefined, schema);
         }
