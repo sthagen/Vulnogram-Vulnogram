@@ -23,6 +23,10 @@ table#vgListTable td.cvss span {
   font-weight: 700;
 }
 
+#draftPublishRows tr.dis {
+  opacity: 0.6;
+}
+
 #vgListTable .cvss span[title^="8"],
 #vgListTable .cvss span[title^="7"]
 {
@@ -125,6 +129,7 @@ button.json-editor-btn-delete {
 #loginErr {
   font-weight: bold;
   margin: 1em;
+  min-height: 1.5em;
 }
 
 .usermgmt {
@@ -185,6 +190,7 @@ button.json-editor-btn-delete {
   background-color: #d73a3a;
 }
 
+#draftPublishDialog,
 #cvePortalDialog {
   width: min(96vw, 1200px);
   height: min(90vh, 1000px);
@@ -208,6 +214,7 @@ button.json-editor-btn-delete {
 /* cveLogin box */
 
 #cpBox {
+  width: 85vw;
   background: linear-gradient(135deg, var(--cve) 0%, var(--sev-med) 100%);
   padding: 2em 0px;
   position: fixed;
@@ -230,17 +237,19 @@ button.json-editor-btn-delete {
 
 #cveLoginForm {
   display: grid; 
-  grid-auto-rows: 1fr; 
-  grid-template-columns: min-content 1fr; 
-  gap: 1em .5em; 
-  padding: 1em;
+  grid-auto-rows: auto;
+  grid-template-columns: 1fr;
+  width: 75vw;
+  gap: .5em .5em; 
+  padding: 0.5em;
 }
 
 #cveLoginForm label {
-  text-align: right;
+  text-align: left;
+  padding: 1em 0 0 0;
+
 }
 #cveLoginForm #cpSubmit {
-  grid-area: 5 / 1 / 6 / 3; 
   justify-self: center; 
   align-self: center; 
 }
@@ -274,6 +283,22 @@ button.json-editor-btn-delete {
   justify-self: stretch; 
   border-left: 2px #999999 dotted;
   grid-area: 1 / 2 / 3 / 3;
+}
+
+#cveLoginForm {
+  grid-auto-rows: 1fr;
+  width: 50vw;
+  grid-template-columns: min-content 1fr;
+}
+
+#cveLoginForm label {
+  display: block;
+  text-align: right;
+  padding: .5em .5em;
+}
+
+#cveLoginForm #cpSubmit {
+  grid-area: 5 / 1 / 6 / 3;
 }
 }
 
