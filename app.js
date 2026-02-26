@@ -88,7 +88,8 @@ const sessionMiddleware = session({
     resave: true,
     saveUninitialized: true,
     cookie: {
-      httpOnly: true
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production'
     }
 });
 app.use(sessionMiddleware);
