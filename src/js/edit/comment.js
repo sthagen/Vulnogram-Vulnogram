@@ -1,9 +1,15 @@
 // Copyright (c) 2018 Chandan B N. All rights reserved.
 
 async function sendComment(f) {
+    var html = '';
+    if (f.simpleHtml) {
+        html = f.simpleHtml.getValue();
+    } else if (f.commentarea) {
+        html = f.commentarea.innerHTML;
+    }
     var comment = {
         id: f.id.value,
-        text: f.commentarea.innerHTML
+        text: html
     };
     if (f.slug && f.slug.value) {
         comment.slug = f.slug.value;
@@ -29,11 +35,9 @@ async function sendComment(f) {
         try {
             var json = await response.json();
             if (json.ok) {
-                if(f.slug) {
-                    //f.wys.destroy();
-                    //f.remove();
-                } else {
-                    f.wys.setValue('');
+                if (!f.slug && f.simpleHtml) {
+                    f.simpleHtml.setValue('');
+                    updateCommentButton(f);
                 }
                 setComments(f.id.value, json.ret);
             } else {
@@ -71,28 +75,28 @@ function fileDelete(m) {
     itemDelete(url, fileLink.textContent, getFiles);
 }
 function itemDelete(url, id, cb) {
-        if (confirm('Delete this ' + id + '?')) {
-            fetch(url, {
-                    method: 'DELETE',
-                    credentials: 'include',
-                    redirect: 'error',
-                    headers: {
-                        'Accept': 'application/json, text/plain, */*',
-                        'CSRF-Token': csrfToken
-                    },
-                }).then(function (response) {
-                    if (response.status == 200) {
-                        infoMsg.textContent = "Deleted ";
-                        errMsg.textContent = "";
-                    } else {
-                        errMsg.textContent = "Error " + response.statusText;
-                        infoMsg.textContent = "";
-                    }
-                    cb();
-                }).catch(function(error) {
-                    alert('Error Deleting file! Try reloading page!');
-                });
-        }
+    if (confirm('Delete this ' + id + '?')) {
+        fetch(url, {
+            method: 'DELETE',
+            credentials: 'include',
+            redirect: 'error',
+            headers: {
+                'Accept': 'application/json, text/plain, */*',
+                'CSRF-Token': csrfToken
+            },
+        }).then(function (response) {
+            if (response.status == 200) {
+                infoMsg.textContent = "Deleted ";
+                errMsg.textContent = "";
+            } else {
+                errMsg.textContent = "Error " + response.statusText;
+                infoMsg.textContent = "";
+            }
+            cb();
+        }).catch(function (error) {
+            alert('Error Deleting file! Try reloading page!');
+        });
+    }
 }
 
 async function getChanges(id) {
@@ -123,6 +127,18 @@ async function getSubDocs(docType, id) {
     }
 }
 
+function hasSimpleHtmlContent(editor) {
+    if (!editor || !editor.contentArea) return false;
+    var text = (editor.contentArea.textContent || '').replace(/\u00a0/g, ' ').trim();
+    if (text) return true;
+    return !!editor.contentArea.querySelector('img,table,blockquote,code,pre,ul,ol,li');
+}
+
+function updateCommentButton(form) {
+    if (!form || !form.simpleHtml || !form.button) return;
+    form.button.disabled = !hasSimpleHtmlContent(form.simpleHtml);
+}
+
 function editPost(slugValue) {
     let post = document.getElementById(slugValue);
     let text = post.querySelector("div");
@@ -140,55 +156,33 @@ function editPost(slugValue) {
 function newCommentBox(div) {
     var nc = document.getElementById("commentTemplate").cloneNode(true); // new comment
     var nf = nc.firstElementChild;
-    nf.commentarea = nc.getElementsByClassName('wysihtml5-editor')[0];
-    if(div) {
-        if(!div.classList.contains('txt')){
-            div.classList.add('txt');
-        }
+    nf.commentarea = nc.getElementsByClassName('simplehtml-editor')[0];
+    var initialHtml = '';
+    if (div) {
+        initialHtml = div.innerHTML;
+        div.className = nf.commentarea.className;
+        div.innerHTML = '';
         nf.replaceChild(div, nf.commentarea);
         nf.commentarea = div;
     }
     document.getElementById("commentTemplate").insertAdjacentElement('afterend', nf)
-    var wys = new wysihtml5.Editor(nf.commentarea, {
-        toolbar: nf.getElementsByClassName('toolbar')[0],
-        parserRules: wysihtml5ParserRules
+    nf.simpleHtml = new SimpleHtml(nf.commentarea, {
+        content: initialHtml,
+        placeholder: 'Add a comment...'
     });
-    wys.on("load", function () {
-        //wys.setValue(div);
-        nf.button.disabled = wys.isEmpty();
-        wys.composer.doc.onkeyup = function () {
-            if(wys.currentView == 'source') {
-                nf.button.disabled = !(wys.sourceView.textarea.value);
-            } else {
-                nf.button.disabled = wys.isEmpty()
-            }
-        };
-function preventDefault(event) {
-    event.preventDefault();
-};
-
-
-function alertFiles(event) {
-    var files = event.dataTransfer.files;
-    //console.log(files);
-    if(files && files.length > 0) {
-        event.preventDefault();
-        var i =0;
-        for(i = 0; i< files.length; i++) {
-            var reader = new FileReader();
-            reader.onload = function (e) {
-                //console.log(e.target.result);
-                wys.composer.commands.exec("insertHTML", '<img src="' + e.target.result+'"/>');
-                wys.composer.commands.exec('insertImage',e.target.result);
-            }
-            reader.readAsDataURL(files[i]);
-        }
-    }
-};
-        wys.on("dragleave", preventDefault);
-        wys.on("drop", alertFiles);
+    updateCommentButton(nf);
+    nf.simpleHtml.contentArea.addEventListener('input', function () {
+        updateCommentButton(nf);
     });
-    nf.wys = wys;
+    nf.simpleHtml.sourceArea.addEventListener('input', function () {
+        updateCommentButton(nf);
+    });
+    nf.simpleHtml.contentArea.addEventListener('blur', function () {
+        updateCommentButton(nf);
+    });
+    nf.simpleHtml.sourceArea.addEventListener('blur', function () {
+        updateCommentButton(nf);
+    });
     return nf;
 }
 
@@ -203,7 +197,7 @@ function preview(el, ev) {
     el.parentNode.lastChild.innerHTML = subdocRender({
         ctemplate: 'filePreview',
         docs: files,
-        columns: ['Selected File','size']
+        columns: ['Selected File', 'size']
     });
     el.nextSibling.nextSibling.className = "btn icn indent save sfe"
 }
@@ -223,7 +217,7 @@ function attach(el, event) {
                 getFiles();
                 el.removeAttribute("disabled");
                 el.form.reset();
-                el.form.lastChild.innerHTML="";
+                el.form.lastChild.innerHTML = "";
             },
             failure: function (error) {
                 pgb.className = 'hid';
@@ -244,7 +238,7 @@ function attach(el, event) {
     return false;
 };
 
-function upload (type, files, comment, cbs) {
+function upload(type, files, comment, cbs) {
 
     var reader = new FileReader();
     var xhr = new XMLHttpRequest();
