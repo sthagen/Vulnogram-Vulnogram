@@ -389,12 +389,8 @@ function treemapSVG(a) {
 
         input = { "_id": "root", items: root };
 
-        console.log('Input');
-        console.log(input);
-        console.log('Processed');
         process = treemap.nodes(input);
         process.shift();
-        console.log(process);
 
         //  console.log(treemap.nodes(input));
 

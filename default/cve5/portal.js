@@ -1000,11 +1000,8 @@ async function cveLoadFromCveOrg(cveId, suppressErrors) {
 
 
 async function cveLoad(cveId) {
-    console.log(new Date().toTimeString() + 'trying to load '+cveId, document.getElementById('editorContent'));
-
     var cveOrgRes = await cveLoadFromCveOrg(cveId, true);
     if (cveOrgRes) {
-        console.log(new Date().toTimeString() + 'loaded '+cveId);
         return cveOrgRes;
     }
 

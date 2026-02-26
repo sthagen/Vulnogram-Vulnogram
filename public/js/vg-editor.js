@@ -4333,7 +4333,7 @@ function Tabs(tabGroupId, tabOpts, primary) {
                 tg.tabs[index].checked = true;
                 tg.tabs[index].dispatchEvent(new Event('change'));
             } else {
-                console.log('no tab');
+                //console.log('no tab');
             }
         }
     }
