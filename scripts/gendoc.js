@@ -234,7 +234,6 @@ function startStaticServer(rootDir, port) {
 
         if (stat.isDirectory()) {
           filePath = path.join(filePath, 'index.html');
-          stat = await fsp.stat(filePath);
         }
 
         const data = await fsp.readFile(filePath);
