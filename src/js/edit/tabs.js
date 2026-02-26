@@ -208,7 +208,7 @@ function scroll2Err(x) {
 
 function showJSONerrors(errors) {
     errList.textContent="";
-    for (i = 0;i < errors.length; i++) {
+    for (var i = 0; i < errors.length; i++) {
         var e = errors[i];
         var showLabel = undefined;
         var ee = docEditor.getEditor(e.path);
