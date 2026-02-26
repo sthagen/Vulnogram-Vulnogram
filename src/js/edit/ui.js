@@ -1,35 +1,3 @@
-// Copyright (c) 2018 Chandan B N. All rights reserved.
-/* jshint esversion: 6 */
-/* jshint browser:true */
-/* jshint unused: false */
-/* globals csrfToken */
-/* globals ace */
-/* globals JSONEditor */
-/* globals pugRender */
-/* globals textUtil */
-/* globals schemaName */
-/* globals wysihtml5 */
-/* globals wysihtml5ParserRules */
-/* globals wysihtml5ParserRules */
-/* globals allowAjax */
-/* globals docSchema */
-/* globals custom_validators */
-/* globals initJSON */
-/* globals postUrl */
-/* globals getChanges */
-/* globals postURL */
-/* globals idpath */
-
-
-var infoMsg = document.getElementById('infoMsg');
-var errMsg = document.getElementById('errMsg');
-var save1 = document.getElementById('save1');
-var save2 = document.getElementById('save2');
-var editorLabel = document.getElementById('editorLabel');
-var iconTheme = 'vgi-';
-var starting_value = {};
-var sourceEditor;
-
 JSONEditor.defaults.languages.en.error_oneOf = "Please fill in the required fields *";
 
 JSONEditor.AbstractEditor.prototype.showStar = function () {
@@ -121,7 +89,7 @@ JSONEditor.defaults.editors.array = class mystring extends JSONEditor.defaults.e
     /* move the delete button next to object title */
     _createDeleteButton (i, holder) {
         var r = super._createDeleteButton(i, holder);
-        r.setAttribute('class', 'sbn vgi-cancel');
+        r.setAttribute('class', 'rbtn vgi-x');
         r.innerHTML = '';
         r.parentNode.setAttribute("vg","obj-del");
         if(!this.options.disable_array_add) {
@@ -134,8 +102,17 @@ JSONEditor.defaults.editors.array = class mystring extends JSONEditor.defaults.e
 JSONEditor.defaults.editors.table = class mystring extends JSONEditor.defaults.editors.table {
     build() {
         super.build();
-        if(this.options.hide_header) {
-            this.thead.style.display = 'none';
+        if(this.options.hide_header && this.thead) {
+            if(this.thead.parentNode) {
+                this.thead.parentNode.removeChild(this.thead);
+            }
+            this.thead = null;
+        } else {
+            this._removeControlsHeader();
+            this._toggleHeader();
+        }
+        if(this.schema && this.schema.options && this.schema.options.table_class != undefined) {
+            this.table.className = this.schema.options.table_class;
         }
         if (this.header) {
             if(this.options.class) {
@@ -147,6 +124,33 @@ JSONEditor.defaults.editors.table = class mystring extends JSONEditor.defaults.e
         }
         if(this.hide_delete_last_row_buttons) { this.delete_last_row_button.style.display = 'none'; }
         if(this.hide_delete_all_rows_buttons) { this.remove_all_rows_button.style.display = 'none'; }        
+    }
+    refreshValue() {
+        super.refreshValue();
+        this._toggleHeader();
+    }
+    _removeControlsHeader() {
+        if(!this.thead) return;
+        var ths = this.thead.querySelectorAll('th');
+        for (var i = ths.length - 1; i >= 0; i--) {
+            var th = ths[i];
+            var text = th.textContent ? th.textContent.trim().toLowerCase() : '';
+            if (text === 'controls' && th.parentNode) {
+                th.parentNode.removeChild(th);
+            }
+        }
+    }
+    _toggleHeader() {
+        var len = (Array.isArray(this.value)) ? this.value.length : 0;
+        if (this.table) {
+            this.table.style.display = len ? '' : 'none';
+        }
+        if(!this.thead) return;
+        if(this.options.hide_header) {
+            this.thead.style.display = 'none';
+            return;
+        }
+        this.thead.style.display = len ? '' : 'none';
     }
 }
 
@@ -191,11 +195,18 @@ JSONEditor.defaults.editors.object = class mystring extends JSONEditor.defaults.
 JSONEditor.defaults.editors.number = class mystring extends JSONEditor.defaults.editors.number {
     build() {
         super.build();
+        setControlFormat(this.control, this.schema);
+        var parsedClasses = parseOptionClasses(this.options && this.options.class);
         if(this.label && this.options.class) {
-            this.label.className = this.label.className + ' ' + this.options.class;
+            if(parsedClasses.otherClasses.length > 0) {
+                this.label.className = this.label.className + ' ' + parsedClasses.otherClasses.join(' ');
+            }
             if(this.showStar()){
                 this.label.className = this.label.className + ' req'; 
             }
+        }
+        if(parsedClasses.iconClass) {
+            addTextInputIcon(this.input, parsedClasses.iconClass);
         }
         if(this.options.formClass) {
             this.control.className = this.control.className + ' ' + this.options.formClass;
@@ -221,11 +232,18 @@ JSONEditor.defaults.editors.string = class mystring extends JSONEditor.defaults.
 
     build() {
         super.build();
+        setControlFormat(this.control, this.schema);
+        var parsedClasses = parseOptionClasses(this.options && this.options.class);
         if(this.label && this.options.class) {
-            this.label.className = this.label.className + ' ' + this.options.class;
+            if(parsedClasses.otherClasses.length > 0) {
+                this.label.className = this.label.className + ' ' + parsedClasses.otherClasses.join(' ');
+            }
             if(this.showStar()){
                 this.label.className = this.label.className + ' req'; 
             }
+        }
+        if(parsedClasses.iconClass) {
+            addTextInputIcon(this.input, parsedClasses.iconClass);
         }
         if(this.options.formClass) {
             this.control.className = this.control.className + ' ' + this.options.formClass;
@@ -506,11 +524,64 @@ JSONEditor.defaults.editors.taglist = class taglist extends JSONEditor.defaults.
     build() {
         this.schema.format = "taglist";
         super.build();
+        var tagClasses = {};
+        var iconSources = [
+            this.schema && this.schema.items && this.schema.items.options && this.schema.items.options.icons,
+            this.schema && this.schema.options && this.schema.options.icons,
+            this.options && this.options.icons
+        ];
+        for (var srcIdx = 0; srcIdx < iconSources.length; srcIdx++) {
+            var src = iconSources[srcIdx];
+            if (src && typeof src === 'object') {
+                Object.keys(src).forEach(function (key) {
+                    tagClasses[key] = src[key];
+                });
+            }
+        }
+        if (!Object.keys(tagClasses).length) {
+            tagClasses = null;
+        }
         //console.log('list'+ this.schema.items.examples);
         this.tagify = new Tagify(this.input, {
             whitelist: this.schema.items.enum ? this.schema.items.enum : (this.schema.items.examples ? this.schema.items.examples : []),
             enforceWhitelist: this.schema.items.enum ? true : false,
             maxTags: this.schema.maxItems ? this.schema.maxItems : 512,
+            transformTag: function(tagData) {
+                if (!tagClasses || !tagData || tagData.value === null || tagData.value === undefined) return;
+
+                var tagValue = String(tagData.value);
+                var mappedClass = tagClasses[tagValue];
+                if (typeof mappedClass !== 'string' || !mappedClass.trim()) return;
+
+                var existingClasses = [];
+                if (typeof tagData.class === 'string' && tagData.class.trim()) {
+                    existingClasses = tagData.class.trim().split(/\s+/);
+                }
+                var mappedClasses = mappedClass.trim().split(/\s+/).map(function (cls) {
+                    if (!cls) return cls;
+                    // `options.icons` values are icon keys; normalize to CSS classes used in this app.
+                    if (cls.indexOf(iconTheme) === 0) return cls;
+                    return iconTheme + cls;
+                });
+                var mergedClasses = [];
+                var seen = {};
+                var i;
+
+                for (i = 0; i < existingClasses.length; i++) {
+                    if (!existingClasses[i] || seen[existingClasses[i]]) continue;
+                    seen[existingClasses[i]] = true;
+                    mergedClasses.push(existingClasses[i]);
+                }
+                for (i = 0; i < mappedClasses.length; i++) {
+                    if (!mappedClasses[i] || seen[mappedClasses[i]]) continue;
+                    seen[mappedClasses[i]] = true;
+                    mergedClasses.push(mappedClasses[i]);
+                }
+
+                if (mergedClasses.length) {
+                    tagData.class = mergedClasses.join(' ');
+                }
+            },
             dropdown: {
               maxItems: 40,           // <- mixumum allowed rendered suggestions
               classname: "tags-look", // <- custom classname for this dropdown, so it could be targeted
@@ -527,32 +598,25 @@ JSONEditor.defaults.editors.taglist = class taglist extends JSONEditor.defaults.
 JSONEditor.defaults.editors.simplehtml = class simplehtml extends JSONEditor.defaults.editors.string {
     getValue() {
         var ret = super.getValue();
-        if(this.wysLoaded) {
-            ret = this.wys.getValue();
+        if (this.simpleHtml) {
+            ret = this.simpleHtml.getValue();
         }
         return ret;
     }
 
     setValue (value,initial,from_template) {
         super.setValue(value,initial,from_template);
-        if (this.wysLoaded) {
-            // get current value from HTML editor
-            var priorVal = this.wys.getValue();
-
-            // set the new value (and let HTML editor perform DOM sanitization)
-            this.wys.setValue(value);
-
-            // get the new value from the HTML editor
-            var currentVal = this.wys.getValue();
-
-            // if they are different trigger a change event.
-            if(priorVal != currentVal) {
-                this.input.value = currentVal;
+        if (this.simpleHtml) {
+            var nextValue = value == null ? '' : value;
+            var priorVal = this.simpleHtml.getValue();
+            this.simpleHtml.setValue(nextValue);
+            var currentVal = this.simpleHtml.getValue();
+            if (priorVal !== currentVal) {
+                this.value = this.input.value = currentVal;
                 this.onChange(true);
             }
-        } else {
         }
-   }
+    }
     build() {
         this.schema.format = this.format = 'hidden';
         super.build();
@@ -562,75 +626,41 @@ JSONEditor.defaults.editors.simplehtml = class simplehtml extends JSONEditor.def
                 this.label.className = this.label.className + ' req'; 
             }
         }
-        this.control.className = 'simplehtml form-control bor';
-        this.toolbar = document.createElement('div');
-        this.toolbar.innerHTML = '<div class="toolbar"><div><span class="btg indent"><a class="sbn vgi-bold" data-wysihtml5-command="bold" title="Bold CTRL+B" href="javascript:;" unselectable="on"></a><a class="sbn vgi-italic" data-wysihtml5-command="italic" title="Italic CTRL+I" href="javascript:;" unselectable="on"></a><a class="sbn vgi-underline" data-wysihtml5-command="underline" title="Underline CTRL+U" href="javascript:;" unselectable="on"></a><a class="sbn vgi-highlight" data-wysihtml5-command="bgColorStyle" title="highlight" color="#666699" data-wysihtml5-command-value="#effa66" href="javascript:;" unselectable="on"></a><!-- <a class="fbn icn strikethrough" data-wysihtml5-command="strike" title="Strike"></a>--></span><span class="btg indent"><a class="sbn vgi-p" data-wysihtml5-command="formatBlock" data-wysihtml5-command-value="p" title="paragraph style" href="javascript:;" unselectable="on"></a><a class="sbn vgi-h1" data-wysihtml5-command="formatBlock" data-wysihtml5-command-value="h1" title="Heading 1" href="javascript:;" unselectable="on"></a><a class="sbn vgi-h2" data-wysihtml5-command="formatBlock" data-wysihtml5-command-value="h2" title="Heading 2" href="javascript:;" unselectable="on"></a><a class="sbn vgi-h3" data-wysihtml5-command="formatBlock" data-wysihtml5-command-value="h3" title="Heading 3" href="javascript:;" unselectable="on"></a><a class="sbn vgi-noformat" data-wysihtml5-command="formatBlock" data-wysihtml5-command-blank-value="true" unselectable="on" title="Clear styles" href="javascript:;"></a></span><span class="btg indent"><a class="sbn vgi-link" data-wysihtml5-command="createLink" title="Hyperlink" href="javascript:;" unselectable="on"></a><a class="sbn vgi-unlink" data-wysihtml5-command="removeLink" title="Unlink" href="javascript:;" unselectable="on"></a><a class="sbn vgi-pic" data-wysihtml5-command="insertImage" title="Insert image" href="javascript:;" unselectable="on"></a><a class="sbn vgi-console" data-wysihtml5-command="formatBlock" data-wysihtml5-command-value="code" title="Code text" href="javascript:;" unselectable="on"></a><a class="sbn vgi-quote" data-wysihtml5-command="formatBlock" data-wysihtml5-command-value="blockquote" title="Block quote" href="javascript:;" unselectable="on"></a><a class="sbn vgi-table" data-wysihtml5-command="createTable" title="Insert Table" href="javascript:;" unselectable="on"></a></span><span class="btg indent"><a class="sbn vgi-bullet" data-wysihtml5-command="insertUnorderedList" title="Bulletted list" href="javascript:;" unselectable="on"></a><a class="sbn vgi-numbered" data-wysihtml5-command="insertOrderedList" title="Numbered list" href="javascript:;" unselectable="on"></a></span><span class="btg indent"><a class="sbn vgi-undo" data-wysihtml5-command="undo" title="Undo" href="javascript:;" unselectable="on"></a><a class="sbn vgi-redo" data-wysihtml5-command="redo" title="Redo" href="javascript:;" unselectable="on"></a><a class="sbn vgi-markup" data-wysihtml5-action="change_view" title="HTML source view" href="javascript:;" unselectable="on"></a></span><span class="btg indent" data-wysihtml5-hiddentools="table" style="display: none;"><a class="sbn vgi-add-row-top" data-wysihtml5-command="addTableCells" data-wysihtml5-command-value="above" title="Insert row above" href="javascript:;" unselectable="on"></a><a class="sbn vgi-add-row-down" data-wysihtml5-command="addTableCells" data-wysihtml5-command-value="below" title="Insert row below" href="javascript:;" unselectable="on"></a><a class="sbn vgi-add-col-left" data-wysihtml5-command="addTableCells" data-wysihtml5-command-value="before" title="Insert column before" href="javascript:;" unselectable="on"></a><a class="sbn vgi-add-col-right" data-wysihtml5-command="addTableCells" data-wysihtml5-command-value="after" title="Insert column after" href="javascript:;" unselectable="on"></a><a class="sbn vgi-row-red" data-wysihtml5-command="deleteTableCells" data-wysihtml5-command-value="row" title="Delete row" href="javascript:;" unselectable="on"></a><a class="sbn vgi-col-red" data-wysihtml5-command="deleteTableCells" data-wysihtml5-command-value="column" title="Delete column" href="javascript:;" unselectable="on"></a></span></div><div data-wysihtml5-dialog="createLink" style="display: none;"><label class="lbl sml vgi-link">Link: </label><input class="vgi-text" size="90" data-wysihtml5-dialog-field="href" value="https://" title="URL"><a class="btn vgi-ext" onclick="window.open(this.previousElementSibling.value)">Open</a><a class="btn indent vgi-ok" data-wysihtml5-dialog-action="save">OK</a><a class="btn vgi-cancel" data-wysihtml5-dialog-action="cancel">Cancel</a></div><div data-wysihtml5-dialog="insertImage" style="display: none;"><label class="lbl vgi-link">URL</label><input class="vgi-txt" data-wysihtml5-dialog-field="src" size="50" value="https://"><label class="lbl">or</label><label class="btn vgi-folder" title="Browse for local images to insert">Insert Image ..<input class="hid" type="file" onchange="loadimg.call(this, event)" accept="image/*"></label><a class="btn indent vgi-ok" data-wysihtml5-dialog-action="save">OK</a><a class="btn vgi-cancel" data-wysihtml5-dialog-action="cancel">Cancel</a></div><div data-wysihtml5-dialog="createTable" style="display: none;"><label class="vgi-table lbl">Rows: </label><input class="txt" type="text" data-wysihtml5-dialog-field="rows"><label class="lbl">Cols: </label><input class="txt" type="text" data-wysihtml5-dialog-field="cols"><a class="btn vgi-ok indent" data-wysihtml5-dialog-action="save">OK</a><a class="btn vgi-cancel" data-wysihtml5-dialog-action="cancel">Cancel</a></div></div>'
-        //document.getElementById('commentTemplate')?.getElementsByClassName('toolbar')[0].cloneNode(true);
-        this.contentDiv = document.createElement('div');
-        this.contentDiv.className = 'pur ht4 fil';
-        if (this.toolbar) {
-            this.toolbar.className = 'fil shd wht stk toolbar';
-            this.input.parentNode.insertBefore(this.toolbar, this.input);
-        }
-        this.input.parentNode.appendChild(this.contentDiv);
+        this.control.className = 'simplehtml form-control';
+        this.simpleHtmlHost = document.createElement('div');
+        this.simpleHtmlHost.className = 'simplehtml-editor';
+        this.input.parentNode.appendChild(this.simpleHtmlHost);
     }
     afterInputReady () {
-        var self = this, options;
-        //console.log('called after input ready' +  this.input.value); 
-        var WYS = this.wys = new wysihtml5.Editor(this.contentDiv, {
-            toolbar: this.toolbar,
-            parserRules: wysihtml5ParserRules,
-            showToolbarAfterInit: false,
-        });
-            
-        this.wys.on('load', function() {
-            self.wys.setValue(self.input.value);
-            var sa = self.wys.getValue();
-            if(sa != self.input.value) {
-                self.input.value = sa;
-                //console.log('Changed on setting input');
-                //self.is_dirty = true;
-                //self.onChange(true);
+        var self = this;
+        var placeholder = (this.options && this.options.inputAttributes && this.options.inputAttributes.placeholder) ||
+            (this.schema && this.schema.placeholder) || '';
+        var options = {
+            content: this.input.value || ''
+        };
+        if (placeholder) {
+            options.placeholder = placeholder;
+        }
+        this.simpleHtml = new SimpleHtml(this.simpleHtmlHost, options);
+
+        var syncValue = function () {
+            var current = self.simpleHtml.getValue();
+            if (current !== self.input.value) {
+                self.value = self.input.value = current;
+                self.is_dirty = true;
+                self.onChange(true);
             }
-            //console.log('Loaded');
-            self.wysLoaded = true;            
-        });
-            
-        this.wys.on('change', function() {
-            self.value = self.input.value = self.wys.getValue();
-            self.is_dirty = true;
-            self.onChange(true);
-            //console.log('Changed' + JSON.stringify(this))
-        });
-            
-        this.wys.on("dragleave", function(event) {
-              event.preventDefault();  
-              event.stopPropagation();
-        });
+        };
 
-        this.wys.on("drop", function(event) {
-              event.preventDefault();  
-              event.stopPropagation();
-              var dt = event.dataTransfer;
-                        var files = dt.files;
+        this.simpleHtml.contentArea.addEventListener('input', syncValue);
+        this.simpleHtml.sourceArea.addEventListener('input', syncValue);
+        this.simpleHtml.contentArea.addEventListener('blur', syncValue);
+        this.simpleHtml.sourceArea.addEventListener('blur', syncValue);
 
-              var reader = new FileReader();
-              reader.onload = function (e) {
-                  //var data = this.result;
-                  self.wys.composer.commands.exec('insertImage',e.target.result);
-                  self.value = self.input.value = self.wys.getValue();
-                    self.is_dirty = true;
-                    self.onChange(true);
-                  
-              };
-              reader.readAsDataURL( files[0] );
-          });
-            
-        this.wys.on("dragover", function(event) {
-                  event.preventDefault();  
-                  event.stopPropagation();
-                  this.addClass('dragging');
-        });
+        var cleaned = this.simpleHtml.getValue();
+        if (cleaned !== this.input.value) {
+            this.value = this.input.value = cleaned;
+        }
     }
     showValidationErrors(errs) {
         var self = this;
@@ -759,11 +789,7 @@ JSONEditor.defaults.editors.upload =
 var iconMapping = {
     collapse: 'down',
       expand: 'add',
-      delete: 'cancel',
-      edit: 'edit',
-      add: 'add',
-      cancel: 'cancel',
-      save: 'save',
+      delete: 'x',
       moveup: 'up',
       movedown: 'down'
 };
@@ -822,7 +848,7 @@ JSONEditor.defaults.themes.customTheme = class customTheme extends JSONEditor.Ab
     }
     getTable() {
         var el = super.getTable();
-        el.className = 'tbl';
+        el.className = 'nobor';
         return el;
     }
     getTableHeaderCell (text) {
@@ -866,12 +892,12 @@ JSONEditor.defaults.themes.customTheme = class customTheme extends JSONEditor.Ab
             } else {
                 input.errmsg.style.display = 'block';
             }
-            input.errmsg.setAttribute('class', 'lbl tred indent');
+            input.errmsg.setAttribute('class', 'lbl tred');
             input.errmsg.textContent = '';
             input.errmsg.appendChild(document.createTextNode(' ' + text));
         }
         if(input.errmsg) {
-            input.errmsg.setAttribute('class', 'lbl tred indent');
+            input.errmsg.setAttribute('class', 'lbl tred');
         }
     }
     removeInputError(input) {
@@ -979,561 +1005,12 @@ var docEditorOptions = {
     //display_required_only: true
 };
 var docEditor;
-/*
-function hashChange() {
-    if(window.location.hash) {
-        var hash = window.location.hash.substring(1);
-        if((hash) && document.getElementById(hash+'Tab')) {
-            selected = hash+'Tab';
-            var t = document.getElementById(selected);
-            t.checked = true;
-            var event = new Event('change');
-            t.dispatchEvent(event);
-        }
-    }
-}
 
-window.onhashchange = hashChange;
-*/
-var selected = "editorTab";
-if (typeof(defaultTab) !== 'undefined') {
-    selected = defaultTab;
-} else {
-    if(window.location.hash) {
-        var hash = window.location.hash.substring(1);
-        if((hash) && document.getElementById(hash+'Tab')){
-            selected = hash+'Tab';
-        }
-    }
-}
-var insync = false;
-
-function Tabs(tabGroupId, tabOpts, primary) {
-    var elem = document.getElementById(tabGroupId);
-    var tg = {
-        changeIndex: [],
-        primary: primary,
-        tabOpts: tabOpts,
-        tabId: [],
-        element: elem,
-        tabs: elem.getElementsByClassName("tab"),
-    }; 
-    for (var i = 0; i < tg.tabs.length; i++) {
-        
-        var tab = tg.tabs[i];
-        //console.log(tab.nextElementSibling);
-        tab.nextElementSibling._tgIndex = tab._tgIndex = i;
-        if(tab.id){
-            tg.tabId[i] = tab.id;
-        }
-        tg.changeIndex[i]=0;
-        tab.addEventListener('change', function(event){
-            //console.log('CLicked ' + JSON.stringify( event) + ' ; ' + event.target);
-            tg.select(event, event.target);
-        });
-    }
-    tg.changeIndex[0] = 1;
-    tg.select = function (event, elem) {
-        //errMsg.textContent = "";
-        var selected = elem._tgIndex;
-        //Does the tab need an update?
-        //console.log('===CLICK====' + selected + ' cI '  + tg.changeIndex);
-        if (tg.changeIndex[selected] < Math.max(...tg.changeIndex)) {
-            var val = tg.getValue();
-            //console.log('VAL = ' + val);
-            if (val) {
-                if(selected != primary){
-                    //console.log(' Then Setting ' + selected);
-                    tg.setValue(selected, val);
-                    tg.changeIndex[selected] = tg.changeIndex[primary];
-                }
-            } else {
-                event.preventDefault();
-                return;
-            }
-        }
-        window.location.hash = tg.tabId[selected].replace(/Tab$/,'');
-    },
-    tg.getValue = function (i) {
-        if(i == undefined) {
-            var maxi = 0;
-            for (var m = 0; m < tg.tabs.length; m++) {
-                if (tg.changeIndex[m] > tg.changeIndex[maxi]) {
-                    maxi = m;
-                }
-            }
-            var src = tg.tabId[maxi];
-            //console.log('Most current = ' + maxi);
-            if (src && tg.tabOpts[src].validate) {
-                    //console.log('Validating ' + src );
-                    var ret = tg.tabOpts[src].validate();
-                    //console.log(' Got = ' + ret)
-                    if(ret == -1) {
-                        //event.preventDefault();
-                        return undefined;
-                    }
-            }
-            var val = tg.getValue(maxi);
-            var primaryChanged = false;
-            if(maxi != primary) {
-                //console.log(' First Setting ' + primary);
-                tg.setValue(primary, val);
-                primaryChanged = true;
-                tg.changeIndex[primary] = tg.changeIndex[maxi];
-                var primaryOpts = tg.tabOpts[tg.tabId[primary]];
-                if (primaryOpts && primaryOpts.validate) {
-                    //console.log('validating Primary');
-                    primaryOpts.validate();
-                }
-            }
-            if (!primaryChanged) {
-                return val;
-            }
-            i = primary;
-        }
-        //console.log('geting tab '+i);
-        if(tg.tabOpts[tg.tabId[i]] && tg.tabOpts[tg.tabId[i]].getValue) {
-            return tg.tabOpts[tg.tabId[i]].getValue();
-        } else {
-            return undefined;
-        }
-    }
-    tg.setValue = function (index, val) {
-        //console.log('Seting tab '+index+ ' + ' + tg.tabId[index] + "="+JSON.stringify(tg.tabOpts));
-        if(tg.tabOpts[tg.tabId[index]] && tg.tabOpts[tg.tabId[index]].setValue) {
-            //console.log('tab INDEX',tg.tabId);
-            return tg.tabOpts[tg.tabId[index]].setValue(val);
-        }
-    }
-    tg.focus = function(index) {
-        if (!insync) {
-            if(tg.tabs[index]) {
-                tg.tabs[index].checked = true;
-                tg.tabs[index].dispatchEvent(new Event('change'));
-            } else {
-                console.log('no tab');
-            }
-        }
-    }
-    tg.change = function(index) {
-        if (!insync) {
-            tg.changeIndex[index]++;
-            errMsg.textContent = '';
-            editorLabel.className = "lbl";
-            infoMsg.textContent = 'Edited';
-            var nid = getDocID();
-            document.title = '• ' + (nid ? nid : 'Vulnogram');
-            if (document.getElementById("save1")) {
-                save2.className = "btn sfe gap save";
-                save1.className = "fbn sfe save";
-            }
-            //console.log('Inc '+ tg.tabId[index] + ' is ' + tg.changeIndex[index]);
-        }
-    }
-    return tg;
+export {
+    uid,
+    tzOffset,
+    localTZ,
+    iconMapping,
+    docEditorOptions,
+    docEditor
 };
-
-var originalTitle = document.title;
-var changes = true;
-
-if (document.getElementById('remove')) {
-    document.getElementById('remove').addEventListener('click', function () {
-        //var e = docEditor.getValue();
-        if (confirm('Delete this ' + originalTitle + '?')) {
-            fetch("", {
-                method: 'DELETE',
-                credentials: 'include',
-                headers: {
-                    'Accept': 'application/json, text/plain, */*',
-                    'CSRF-Token': csrfToken
-                },
-            }).then(function (response) {
-                if (response.status == 200) {
-                    infoMsg.textContent = "Deleted ";
-                    errMsg.textContent = "";
-                    window.location = "./";
-                } else {
-                    showAlert("Error " + response.statusText);
-                    errMsg.textContent = "Error " + response.statusText;
-                    infoMsg.textContent = "";
-                }
-            });
-        }
-    });
-}
-
-if (document.getElementById('save1') && document.getElementById('save2')) {
-    document.getElementById('save1').addEventListener('click', save);
-    document.getElementById('save2').addEventListener('click', save);
-    document.getElementById('save2').removeAttribute("style");
-}
-
-function scroll2Err(x) {
-    var path = x.getAttribute('e_path');
-    mainTabGroup.focus(0);
-    if(path) {
-        if(!path.startsWith('root.')) {
-            path = 'root.' + path;
-        }
-        var ee = docEditor.getEditor(path);
-        if(ee && ee.container) {
-            var stkH = document.getElementById("vgHead").offsetHeight;
-            ee.container.style["scroll-margin-top"] = (stkH + 40) + "px";
-            ee.container.scrollIntoView({behavior:"smooth"});
-            x.closest('details').removeAttribute('open');
-        }
-    }
-}
-
-function showJSONerrors(errors) {
-    errList.textContent="";
-    for (i = 0;i < errors.length; i++) {
-        var e = errors[i];
-        var showLabel = undefined;
-        var ee = docEditor.getEditor(e.path);
-        if (ee) {
-            if(ee.header && ee.header.innerText) {
-                showLabel = ee.header.innerText;
-            }
-            if(!showLabel && !(ee.original_schema === undefined) && !(ee.original_schema.title === undefined)) {
-                showLabel = ee.original_schema.title
-            } else {
-                showLabel = ee.getHeaderText();
-            }
-        }
-        var a = document.createElement('a');
-        a.setAttribute('class', 'vgi-alert')
-        a.setAttribute('e_path', e.path);
-        a.setAttribute('onclick', 'scroll2Err(this)');
-        a.textContent = (showLabel && showLabel.trim() ? showLabel : e.path.replace('^root.','')) + ": " + e.message;
-        errList.appendChild(a);
-        errList.appendChild(document.createElement('br'))
-    }
-    errCount.className = 'indent bdg';
-    errPop.className = 'popup';
-    errCount.innerText = errors.length;
-    editorLabel.className = "red lbl";
-}
-
-function hideJSONerrors() {
-    errCount.innerText = "";
-    errPop.className = 'hid';
-    errList.textContent = "";
-    editorLabel.className = "lbl";
-}
-
-var defaultTabs = {
-    editorTab: {
-        setValue: function (val) {
-            insync = true;
-            docEditor.setValue(val);
-            insync = false;
-        },
-        getValue: function () {
-            return docEditor.getValue();
-        },
-        validate: function (x) {
-            var errors = [];
-            if (x) {
-                errors = docEditor.validate(x);
-            } else {
-                errors = docEditor.validate();
-            }
-            if (typeof(errorFilter) !== 'undefined'){
-                errors = errorFilter(errors);
-            }
-            if (errors.length > 0) {
-                docEditor.setOption('show_errors', 'always');
-                showJSONerrors(errors);
-                return 0;
-            } else {
-                hideJSONerrors();
-                return 1;
-            }
-        }
-    },
-    sourceTab: {
-        setValue: function (val) {
-            if (sourceEditor == undefined) {
-                ace.config.set('basePath', '/js/')
-                sourceEditor = ace.edit("output");
-                sourceEditor.getSession().setMode("ace/mode/json");
-                sourceEditor.getSession().on('change', function () {
-                    mainTabGroup.change(1);
-                });
-                sourceEditor.setOptions({
-                    maxLines: 480,
-                    wrap: true
-                });
-                sourceEditor.$blockScrolling = Infinity;
-            }
-            insync = true;
-            sourceEditor.getSession().setValue(JSON.stringify(val, null, 2));
-            sourceEditor.clearSelection();
-            insync = false;
-        },
-        validate: function () {
-            try {
-                var hasError = false;
-                var firsterror = null;
-                var annotations = sourceEditor.getSession().getAnnotations();
-                for (var l in annotations) {
-                    var annotation = annotations[l];
-                    if (annotation.type === "error") {
-                        hasError = true;
-                        firsterror = annotation;
-                        //console.log('SOurce error'+annotation);
-                        break;
-                    }
-                }
-                if (!hasError) {
-                    return 1;
-                } else {
-                    sourceEditor.moveCursorTo(firsterror.row, firsterror.column, false);
-                    sourceEditor.clearSelection();
-                    showAlert('Please fix error: ' + firsterror.text);
-                    errMsg.textContent = 'Please fix error: ' + firsterror.text;
-                    document.getElementById("sourceTab").checked = true;
-                    return -1;
-                }
-            } catch (err) {
-                showAlert(err.message);
-                errMsg.textContent = err.message;
-                document.getElementById("sourceTab").checked = true;
-                return -1;
-            } finally {}
-        },
-        getValue: function () {
-            return JSON.parse(sourceEditor.getSession().getValue());
-        }
-    }
-};
-if(typeof additionalTabs !== 'undefined') {
-    Object.assign(defaultTabs, additionalTabs);
-}
-
-var mainTabGroup = new Tabs('mainTabGroup', defaultTabs, 0);
-
-function loadJSON(res, id, message, editorOptions) {
-    // workaround for JSON Editor issue with clearing arrays
-    // https://github.com/jdorn/json-editor/issues/617
-    if (docEditor) {
-        docEditor.destroy();
-    }
-    docEditor = new JSONEditor(document.getElementById('docEditor'), editorOptions ? editorOptions : docEditorOptions);
-    docEditor.on('ready', async function () {
-        await docEditor.root.setValue(res, true);
-        infoMsg.textContent = message ? message : '';
-        //errMsg.textContent = "";
-        if(id) {
-            document.title = id;
-        } else {
-            var nid =  getDocID();
-            document.title = nid ? nid : 'Vulnogram';
-        }
-        if (document.getElementById("save1")) {
-            save2.className = "btn sfe gap";
-            save1.className = "fbn sfe";
-        }
-        if (message) {
-            selected = "editorTab";
-        }
-        docEditor.watch('root', function(){
-            mainTabGroup.change(0);
-        });
-        docEditor.on('change', async function(){
-            var errors = [];
-            if(docEditor.validation_results && docEditor.validation_results.length > 0) {
-                if (typeof(errorFilter) !== 'undefined'){
-                    errors = errorFilter(docEditor.validation_results);
-                } else {
-                    errors = docEditor.validation_results;
-                }
-            }
-            if(errors.length > 0) {
-                showJSONerrors(errors);
-            } else {
-                hideJSONerrors();
-            }
-        });
-        editorLabel.className = "lbl";
-        postUrl = getDocID() ? './' + getDocID() : "./new";
-
-        document.getElementById(selected).checked = true;
-        var event = new Event('change');
-        //document.getElementById(selected).dispatchEvent(event);
-        setTimeout(function (){
-            document.getElementById(selected).dispatchEvent(event);
-        }, 50);
-    });
-}
-
-function save(e, onSuccess) {
-    var j = mainTabGroup.getValue();
-    if (!j){
-        return;
-    }
-    infoMsg.textContent = "Saving...";
-    fetch(postUrl ? postUrl : '', {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-                'Accept': 'application/json, text/plain, */*',
-                'Content-Type': 'application/json',
-                'CSRF-Token': csrfToken
-            },
-            redirect: 'error',
-            body: JSON.stringify(j),
-        })
-        .then(function (response) {
-            if (!response.ok) {
-                throw Error(response.statusText);
-            }
-            return response.json();
-        })
-        .then(function (res) {
-            if (res.type == "go") {
-                window.location.href = res.to;
-            } else if (res.type == "err") {
-                showAlert(res.msg);
-                errMsg.textContent = res.msg;
-                infoMsg.textContent = "";
-            } else if (res.type == "saved") {
-                infoMsg.textContent = "Saved";
-                errMsg.textContent = "";
-                document.title = originalTitle;
-                // turn button to normal, indicate nothing to save,
-                // but do not disable it.
-                if (document.getElementById("save1")) {
-                    save2.className = "btn sfe gap";
-                    save1.className = "fbn sfe";
-                }
-                getChanges(getDocID());
-                if (onSuccess)
-                    onSuccess()
-            }
-            changes = 0;
-        })
-        .catch(function (error) {
-            showAlert(error + ' Try reloading the page.');
-            errMsg.textContent = error + ' Try reloading the page.';
-        });
-    // This is a trick for brower auto completion to work
-        document.getElementById('docEditor').submit();
-}
-
-function getDocID() {
-    var idEditor = docEditor.getEditor('root.' + idpath);
-    if (idEditor) {
-        var val = idEditor.getValue();
-        if (val) {
-            return val;
-        } else {
-            return null;
-        }
-    }
-}
-function copyText(element) {
-    if (document.selection) {
-        var range = document.body.createTextRange();
-        range.moveToElementText(element);
-        range.select();
-        document.execCommand("copy");
-        document.selection.empty();
-        infoMsg.textContent = 'Copied JSON to clipboard';
-    } else if (window.getSelection) {
-        var mrange = document.createRange();
-        mrange.selectNode(element);
-        window.getSelection().removeAllRanges();
-        window.getSelection().addRange(mrange);
-        document.execCommand("copy");
-        window.getSelection().removeAllRanges();
-        infoMsg.textContent = 'Copied JSON to clipboard';
-    }
-}
-function importFile(event, elem) {
-    var file = document.getElementById("importJSON");
-    file.click();
-}
-function loadFile(event, elem) {
-    var file = elem.files[0];
-    if (file) {
-        var reader = new FileReader();
-        reader.readAsText(file, "UTF-8");
-        reader.onload = function (evt) {
-            loadJSON(JSON.parse(evt.target.result), null, "Imported file");
-        };
-        reader.onerror = function (evt) {
-            showAlert("Error reading file");
-            errMsg.textContent = "Error reading file";
-        };
-    }
-}
-function downloadFile(event, link) {
-    var j = mainTabGroup.getValue();
-    if (!j){
-        event.preventDefault();
-        alert('JSON Validation Failure: Fix the errors before downloading')
-        return false;
-    }
-    var file = new File([textUtil.getMITREJSON(textUtil.reduceJSON(j))], getDocID() + '.json', {
-        type: "text/plain",
-        lastModified: new Date()
-    });
-    link.href = URL.createObjectURL(file);
-    link.download = file.name;
-    // trick to get autocomplete work
-    document.getElementById('docEditor').submit();
-
-}
-function downloadText(element, link) {
-    var j = mainTabGroup.getValue();
-    if (!j){
-        event.preventDefault();
-        alert('JSON Validation Failure: Fix the errors before downloading.')
-        return false;
-    }
-    var file = new File([element.textContent], getDocID() + '.json', {
-        type: "text/plain",
-        lastModified: new Date()
-    });
-    link.href = URL.createObjectURL(file);
-    link.download = file.name;
-}
-function downloadHtml(title, element, link) {
-    var file = new File([
-            '<html><head><title>'
-            + title
-            + '</title><style>body{font-family:"Helvetica"; margin:3em}</style><body>'
-            + element.innerHTML
-            + '</body></html>'
-        ], getDocID() + '.html', {
-        type: "text/html",
-        lastModified: new Date()
-    });
-    link.href = URL.createObjectURL(file);
-    link.download = file.name;
-}
-
-function showAlert(msg, smallmsg, timer, showCancel) {
-    errMsg.textContent="";
-    infoMsg.textContent="";
-    if (showCancel) {
-        document.getElementById("alertCancel").style.display = "inline-block";
-    } else {
-        var temp1 = document.getElementById("alertOk");
-        temp1.setAttribute("onclick", "document.getElementById('alertDialog').close();");
-        document.getElementById("alertCancel").style.display = "none";
-    }
-    document.getElementById("alertMessage").innerText = msg;
-    if (smallmsg)
-        document.getElementById("smallAlert").innerText = smallmsg;
-    else
-        document.getElementById("smallAlert").innerText = " ";
-    if (!document.getElementById("alertDialog").hasAttribute("open"))
-        document.getElementById("alertDialog").showModal();
-    if (timer)
-        setTimeout(function () {
-            document.getElementById("alertDialog").close();
-        }, timer);
-}

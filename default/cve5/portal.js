@@ -1,63 +1,352 @@
 //CVE Services Client and Portal GUI 
 
 var csClient = undefined;
+var defaultPortalUrl = 'https://cveawg.mitre.org/api';
 
 var csCache = {
     portalType: 'production',
-    url: 'https://cveawg.mitre.org/api',
+    url: defaultPortalUrl,
     org: null,
     user: null,
     orgInfo: null
+}
+var portalBootstrapPromise = null;
+var portalNavStatePromise = null;
+var cvePortalFilterChoice = {
+    fstate: 'RESERVED',
+    y: null
+};
+
+function setPortalNavConnectionState(connected) {
+    var nav = document.getElementById('cvePortalNav');
+    if (!nav) {
+        return;
+    }
+    var status = connected ? 'connected' : 'disconnected';
+    nav.setAttribute('data-portal-status', status);
+    nav.setAttribute('title', connected ? 'CVE Services connected' : 'CVE Services disconnected (login required)');
+}
+
+async function refreshPortalNavConnectionState() {
+    if (!('serviceWorker' in navigator)) {
+        setPortalNavConnectionState(false);
+        return false;
+    }
+    if (portalNavStatePromise) {
+        return portalNavStatePromise;
+    }
+    portalNavStatePromise = (async function () {
+        try {
+            await ensurePortalBootstrap();
+        } catch (e) {
+            setPortalNavConnectionState(false);
+            return false;
+        }
+        try {
+            var hasSession = await hasActivePortalSession(csCache.url);
+            setPortalNavConnectionState(hasSession);
+            return hasSession;
+        } catch (e) {
+            setPortalNavConnectionState(false);
+            return false;
+        }
+    })();
+    try {
+        return await portalNavStatePromise;
+    } finally {
+        portalNavStatePromise = null;
+    }
+}
+
+function initPortalNavConnectionState() {
+    setPortalNavConnectionState(false);
+    refreshPortalNavConnectionState();
+    window.addEventListener('focus', refreshPortalNavConnectionState);
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initPortalNavConnectionState);
+} else {
+    initPortalNavConnectionState();
+}
+
+function isPortalAuthError(e) {
+    const err = e && e.error ? e.error : null;
+    return err == 'NO_SESSION' || err == 'UNAUTHORIZED';
+}
+
+function normalizePortalUrl(url) {
+    if (!url) {
+        return defaultPortalUrl;
+    }
+    return String(url).trim().replace(/\/+$/, '');
+}
+
+function getClientPortalUrl() {
+    if (!csClient || !csClient._middleware) {
+        return null;
+    }
+    return normalizePortalUrl(csClient._middleware.serviceUri);
+}
+
+function ensureCsClient(url) {
+    const targetUrl = normalizePortalUrl(url);
+    const currentUrl = getClientPortalUrl();
+    if (!csClient || currentUrl !== targetUrl) {
+        csClient = new CveServices(targetUrl, "./static/cve5sw.js");
+    }
+    return csClient;
+}
+
+function clearPortalSessionCache() {
+    const settings = getStoredPortalSettings();
+    csCache = {
+        portalType: settings.portalType,
+        url: settings.portalUrl,
+        org: null,
+        user: null,
+        orgInfo: null
+    };
+    window.localStorage.removeItem('cveApi');
+    setPortalNavConnectionState(false);
+}
+
+async function hasActivePortalSession(url) {
+    if (!('serviceWorker' in navigator)) {
+        setPortalNavConnectionState(false);
+        return false;
+    }
+    const targetUrl = normalizePortalUrl(url || csCache.url || getStoredPortalSettings().portalUrl);
+    csCache.url = targetUrl;
+    csClient = ensureCsClient(targetUrl);
+    const restored = await restorePortalCacheFromSession();
+    if (!(restored && csCache.user && csCache.org)) {
+        setPortalNavConnectionState(false);
+        return false;
+    }
+    // Verify session against CVE Services, not just cached SW credentials.
+    try {
+        await csClient.getOrgInfo();
+        setPortalNavConnectionState(true);
+        return true;
+    } catch (e) {
+        if (isPortalAuthError(e)) {
+            if (csClient && typeof csClient.logout === 'function') {
+                try {
+                    await csClient.logout();
+                } catch (e2) {
+                    // ignore cleanup errors
+                }
+            }
+            clearPortalSessionCache();
+            return false;
+        }
+        throw e;
+    }
+}
+
+function setPortalSidebarState(show) {
+    var portalDialog = document.getElementById('cvePortalDialog');
+    var portalNav = document.getElementById('cvePortalNav');
+    if (!portalDialog) {
+        return false;
+    }
+    if (!portalDialog._portalEventsBound) {
+        portalDialog.addEventListener('close', function () {
+            var nav = document.getElementById('cvePortalNav');
+            if (nav) {
+                nav.classList.remove('active');
+            }
+        });
+        portalDialog._portalEventsBound = true;
+    }
+    if (show) {
+        if (!portalDialog.open) {
+            portalDialog.showModal();
+        }
+        if (portalNav) {
+            portalNav.classList.add('active');
+        }
+    } else {
+        if (portalDialog.open) {
+            portalDialog.close();
+        }
+        if (portalNav) {
+            portalNav.classList.remove('active');
+        }
+    }
+    return show;
+}
+
+function closeCvePortal(event) {
+    if (event && event.preventDefault) {
+        event.preventDefault();
+    }
+    setPortalSidebarState(false);
+    return false;
+}
+
+function showCvePortal(event, forceShow) {
+    if (event && event.preventDefault) {
+        event.preventDefault();
+    }
+    var portalDialog = document.getElementById('cvePortalDialog');
+    if (!portalDialog) {
+        return false;
+    }
+    var show = forceShow === true ? true : !portalDialog.open;
+    if (!show) {
+        setPortalSidebarState(false);
+        return false;
+    }
+    setPortalSidebarState(true);
+    var portalFeedback = new feedback(document.getElementById('port'), 'spinner');
+    showPortalViewOrLogin()
+        .finally(function () {
+            portalFeedback.cancel();
+        });
+    return false;
+}
+
+async function showPortalViewOrLogin() {
+    if (!('serviceWorker' in navigator)) {
+        document.getElementById('port').innerHTML = '<h2 class="pad2 tred">Browser does not support Service Workers feature required for this tab.</h2><i class="indent pad2">Are you using Firefox in Private mode? Try normal mode.</i>';
+        setPortalSidebarState(true);
+        return false;
+    }
+    try {
+        await ensurePortalBootstrap();
+    } catch (e) {
+        portalErrorHandler(e);
+        return false;
+    }
+    loadPortalCache();
+    if (!csCache.url) {
+        csCache.url = getStoredPortalSettings().portalUrl;
+    }
+    let hasSession = false;
+    try {
+        hasSession = await hasActivePortalSession(csCache.url);
+    } catch (e) {
+        portalErrorHandler(e);
+        return false;
+    }
+    if (!hasSession) {
+        showPortalLogin();
+        setPortalSidebarState(true);
+        return false;
+    }
+    await showPortalView();
+    setPortalSidebarState(true);
+    return true;
+}
+
+function portalFocusEditor() {
+    setPortalSidebarState(false);
+    if (typeof (mainTabGroup) !== 'undefined') {
+        mainTabGroup.change(0);
+    }
+}
+
+function getStoredPortalSettings() {
+    let portalType = window.localStorage.getItem('portalType');
+    let portalUrl = window.localStorage.getItem('portalUrl');
+    if (!portalType || !portalUrl) {
+        portalType = 'production';
+        portalUrl = defaultPortalUrl;
+    }
+    return {
+        portalType: portalType,
+        portalUrl: portalUrl
+    };
+}
+
+function loadPortalCache() {
+    if (!window.localStorage.getItem('cveApi')) {
+        return;
+    }
+    try {
+        const cache = JSON.parse(window.localStorage.getItem('cveApi'));
+        if (cache && typeof cache === 'object') {
+            csCache = cache;
+        } else {
+            window.localStorage.removeItem('cveApi');
+        }
+    } catch (e) {
+        window.localStorage.removeItem('cveApi');
+    }
+}
+
+async function restorePortalCacheFromSession() {
+    if (!csClient || typeof csClient.getSession !== 'function') {
+        return false;
+    }
+    try {
+        const session = await csClient.getSession();
+        if (!session || !session.user || !session.org) {
+            return false;
+        }
+        const settings = getStoredPortalSettings();
+        csCache.user = session.user;
+        csCache.org = session.org;
+        csCache.url = csCache.url ? csCache.url : settings.portalUrl;
+        csCache.portalType = csCache.portalType ? csCache.portalType : settings.portalType;
+        csCache.orgInfo = csCache.orgInfo ? csCache.orgInfo : null;
+        window.localStorage.setItem('cveApi', JSON.stringify(csCache));
+        window.localStorage.setItem('shortName', session.org);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function bootstrapCsClient() {
+    if (!('serviceWorker' in navigator)) {
+        return false;
+    }
+    loadPortalCache();
+    if (!csCache.url) {
+        csCache.url = getStoredPortalSettings().portalUrl;
+    }
+    csClient = ensureCsClient(csCache.url);
+    listenforLogins();
+    listenforLogouts();
+    return true;
+}
+
+function ensurePortalBootstrap() {
+    if (!portalBootstrapPromise) {
+        portalBootstrapPromise = bootstrapCsClient().catch(function (e) {
+            portalBootstrapPromise = null;
+            throw e;
+        });
+    }
+    return portalBootstrapPromise;
 }
 
 async function initCsClient() {
     if ('serviceWorker' in navigator) {
         try {
-            if (window.localStorage.getItem('cveApi')) {
-                csCache = JSON.parse(window.localStorage.getItem('cveApi'));
+            await ensurePortalBootstrap();
+            const hasSession = await hasActivePortalSession(csCache.url);
+            if (hasSession) {
+                await showPortalView();
+            } else {
+                clearPortalSessionCache();
             }
-            if (!csCache.url) {
-                csCache.url = 'https://cveawg.mitre.org/api';
-            }
-            csClient = new CveServices(csCache.url, "./static/cve5sw.js");
-            listenforLogins();
-            listenforLogouts();
-            if (!csCache.user) {
-                showPortalLogin();
-                return;
-            }
-            await showPortalView();
         } catch (e) {
             portalErrorHandler(e);
         }
-    } else {
-        document.getElementById('port').innerHTML = '<h2 class="pad2 tred">Browser does not support Service Workers feature required for this tab.</h2><i class="indent pad2">Are you using Firefox in Private mode? Try normal mode.</i>';
-//        console.log("Browser does not support Service Workers. Are you using Firefox in Private mode?")
-        //cveShowError('Browser not supported!');
     }
 }
 
 function showPortalLogin(message) {
-    let prevPortalType = window.localStorage.getItem('portalType');
-    let prevPortalUrl = window.localStorage.getItem('portalUrl');
-    if (!prevPortalType || !prevPortalUrl) {
-      // ensure consistency if either value is missing from localStorage by setting both to default
-      prevPortalType = 'production';
-      prevPortalUrl = 'https://cveawg.mitre.org/api';
-    }
-    csCache = {
-        portalType: prevPortalType,
-        url: prevPortalUrl,
-        org: null,
-        user: null,
-        orgInfo: null
-    }
-    window.localStorage.removeItem('cveApi');
+    clearPortalSessionCache();
 
     document.getElementById('port').innerHTML = cveRender({
         ctemplate: 'cveLoginBox',
         message: message,
-        prevPortal: prevPortalType,
+        prevPortal: csCache.portalType,
         prevOrg: window.localStorage.getItem('shortName')
     })
 }
@@ -66,11 +355,26 @@ async function portalLogout(message) {
     if (csClient != null) {
         await csClient.logout();
     }
-    showPortalLogin(message);
+    clearPortalSessionCache();
+    setPortalSidebarState(false);
+    if (document.getElementById('loginErr')) {
+        document.getElementById("loginErr").innerText = message ? message : '';
+    } else if (document.getElementById('port')) {
+        document.getElementById('port').innerHTML = '';
+    }
 }
 
 async function showPortalView(orgInfo, userInfo) {
     try {
+        var filterForm = document.getElementById("cvePortalFilter");
+        if (filterForm) {
+            if (filterForm.fstate) {
+                cvePortalFilterChoice.fstate = filterForm.fstate.value + '';
+            }
+            if (filterForm.y && filterForm.y.value) {
+                cvePortalFilterChoice.y = filterForm.y.value + '';
+            }
+        }
         if (!orgInfo) {
             orgInfo = await csClient.getOrgInfo();
         }
@@ -81,15 +385,20 @@ async function showPortalView(orgInfo, userInfo) {
             portalType: csCache.portalType,
             portalURL: csCache.url,
             ctemplate: 'portal',
+            filterState: cvePortalFilterChoice.fstate,
+            filterYear: cvePortalFilterChoice.y ? cvePortalFilterChoice.y : (
+                typeof currentYear !== 'undefined' ? (currentYear + '') : ((new Date()).getFullYear() + '')
+            ),
             userInfo: userInfo,
             org: orgInfo
         });
+        setPortalNavConnectionState(true);
         var button1 = document.getElementById('post1');
         if(button1) {
             if(csCache.portalType == 'test') {
                 button1.innerText = 'Post to Test Portal'
             } else {
-                button1.innerText = 'Post to CVE.org'
+                button1.innerText = 'Publish CVE'
             }
         }
         var button2 = document.getElementById("post2")
@@ -97,7 +406,7 @@ async function showPortalView(orgInfo, userInfo) {
             if(csCache.portalType == 'test') {
                 button2.innerText = 'Post to Test Portal'
             } else {
-                button2.innerText = 'Post to CVE.org';
+                button2.innerText = 'Publish CVE';
             }
         }
         return await cveGetList();
@@ -112,29 +421,56 @@ var logoutChannel = new BroadcastChannel("logout");
 function listenforLogins() {
     loginChannel.onmessage = function (a) {
         initCsClient();
+        refreshPortalNavConnectionState();
     }
 }
 function listenforLogouts() {
     logoutChannel.onmessage = function (a) {
-        showPortalLogin(a.message);
+        clearPortalSessionCache();
+        setPortalSidebarState(false);
+        if (document.getElementById('loginErr')) {
+            document.getElementById("loginErr").innerText = a.message ? a.message : '';
+        } else if (document.getElementById('port')) {
+            document.getElementById('port').innerHTML = '';
+        }
+    }
+}
+function normalizeShortName(shortName) {
+    if (!shortName) return null;
+    return String(shortName).trim().toLowerCase().replace(/\s+/g, '_');
+}
+
+async function refreshRecentCveEntries(shortName) {
+    if (typeof loadRecentAbbreviatedIds !== 'function') {
+        return;
+    }
+    var orgName = normalizeShortName(shortName);
+    if (!orgName) {
+        return;
+    }
+    try {
+        var recent = await loadRecentAbbreviatedIds(orgName);
+        if (typeof window !== 'undefined' && typeof window.setRecentCveEntries === 'function') {
+            window.setRecentCveEntries(recent, orgName);
+        }
+    } catch (e) {
+        console.error('Failed to refresh recent CVE entries for ' + orgName, e);
     }
 }
 
 async function portalLogin(elem, credForm) {
     try {
-        if (!'serviceWorker' in navigator) {
-            cveShowError('Browser is missing required features. Try a different browser or the normal mode.')
+        if (!('serviceWorker' in navigator)) {
+            cveShowError('Browser is missing required features. Try a different browser that supports Service Workers.')
             return (false);
         }
         if (!credForm.checkValidity()) {
             return (false);
         }
         elem.preventDefault();
-        var url = credForm.portal.value;
+        var url = normalizePortalUrl(credForm.portal.value);
         var portalType = credForm.portal.options[credForm.portal.selectedIndex].text;
-        if (csClient && csCache.url != url) {
-            csClient = new CveServices(url, "./static/cve5sw.js");
-        }
+        csClient = ensureCsClient(url);
         var ret = await csClient.login(
             credForm.user.value,
             credForm.org.value,
@@ -157,6 +493,7 @@ async function portalLogin(elem, credForm) {
 
         if (ret == 'ok' || ret.data == "ok") {
             csCache.keyUrl = ret.keyUrl;
+            await refreshRecentCveEntries(credForm.org.value);
             await showPortalView(orgInfo, userInfo);
             /* Add one hour session timeout in addition to timeout in serviceWorker */
             setTimeout(portalLogout, defaultTimeout);
@@ -178,19 +515,35 @@ function resetPortalLoginErr() {
 
 
 function portalErrorHandler(e) {
-    if (e.error && (e.error == 'NO_SESSION' || e.error == 'UNAUTHORIZED' || e.error.message == 'Failed to fetch')) {
-        if (e.error == 'UNAUTHORIZED') {
-            e.message = "Valid credentials required",
-            mainTabGroup.focus(3);
+    const err = e && e.error ? e.error : null;
+    const isNoSession = err == 'NO_SESSION';
+    const isUnauthorized = err == 'UNAUTHORIZED';
+    const isFetchError = !!(err && typeof err === 'object' && err.message == 'Failed to fetch');
+
+    if (isFetchError) {
+        const message = 'Error connecting to service';
+        if (document.getElementById("loginErr")) {
+            document.getElementById("loginErr").innerText = message;
+        } else {
+            cveShowError({ error: 'NETWORK_ERROR', message: message });
         }
-        if (e.error.message == 'Failed to fetch') {
-            e.message = "Error connecting to service";
+        return;
+    }
+
+    if (isNoSession || isUnauthorized) {
+        var loginErrNode = document.getElementById("loginErr");
+        if (!loginErrNode && csClient && typeof csClient.logout === 'function') {
+            csClient.logout().catch(function () { });
         }
+        clearPortalSessionCache();
+        const message = isUnauthorized ? 'Valid credentials required' : ((e && e.message) ? e.message : 'Please login.');
         if (document.getElementById("loginErr")) {
             // Login screen exists
-            document.getElementById("loginErr").innerText = e && e.message ? e.message : 'Valid credentials required!';
+            document.getElementById("loginErr").innerText = message;
+        } else if (document.getElementById('port')) {
+            showPortalLogin(message);
         } else {
-            showPortalLogin(e.message);
+            cveShowError({ error: err, message: message });
         }
     } else {
         cveShowError(e);
@@ -391,15 +744,19 @@ async function cveOrgUpdate() {
 
 async function cveRenderList(l, refreshEditor) {
     if (l && document.getElementById('cveList')) {
+        var canInlineLoad = !!(document.getElementById('docEditor') && typeof loadJSON === 'function' && typeof mainTabGroup !== 'undefined');
+        var docPathBase = '/' + ((typeof schemaName === 'string' && schemaName) ? schemaName : 'cve5') + '/';
         document.getElementById('cveList').innerHTML = cveRender({
             ctemplate: 'listIds',
             cveIds: l,
-            editable: true//(csCache.portalType == 'test')
+            editable: true,//(csCache.portalType == 'test')
+            inlineLoad: canInlineLoad,
+            docPathBase: docPathBase
         })
         if (l.length > 0) {
             new Tablesort(document.getElementById('cveListTable'));
         }
-        if (refreshEditor) {
+        if (refreshEditor && typeof docSchema !== 'undefined' && docSchema && typeof editorSetCveDatalist === 'function' && document.getElementById('root.cveMetadata.cveId-datalist')) {
             docSchema.definitions.cveId.examples = l.map(i => i.cve_id);
             editorSetCveDatalist(l);
         }
@@ -470,20 +827,30 @@ async function pageShow(ret) {
 }
 
 async function cveShowError(err) {
-    if ((err.error == 'UNAUTHORIZED' || err.error == 'NO_SESSION' || csClient == null || await csClient._middleware.worker == null)) {
-        err.message = 'Login required';
-        showPortalLogin();
-        mainTabGroup.focus(3);
+    if (!err) {
+        err = { error: 'Error', message: 'Unknown error' };
     }
-    document.getElementById('cveErrors').innerHTML = cveRender({
-        ctemplate: 'cveErrors',
-        err: err
-    })
-    document.getElementById('cveErrorsModal').showModal();
+    var cveErrorContainer = document.getElementById('cveErrors');
+    var cveErrorModal = document.getElementById('cveErrorsModal');
+    if (cveErrorContainer && cveErrorModal && typeof cveRender === 'function') {
+        cveErrorContainer.innerHTML = cveRender({
+            ctemplate: 'cveErrors',
+            err: err
+        });
+        cveErrorModal.showModal();
+        return;
+    }
+    var fallbackMessage = (err && err.message) ? err.message : cvePublishErrorMessage(err);
+    if (typeof showAlert === 'function') {
+        showAlert('Error', fallbackMessage);
+    } else if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+        window.alert('Error: ' + fallbackMessage);
+    }
 }
 
 async function cveGetList() {
     var currentReserved = true;
+    var cveListFeedback = new feedback(document.getElementById('cveList'), 'spinner');
     var filter = {
         state: 'RESERVED',
         cve_id_year: currentYear
@@ -491,6 +858,7 @@ async function cveGetList() {
     var cveForm = document.getElementById("cvePortalFilter");
     if (cveForm) {
         if (cveForm.fstate) {
+            cvePortalFilterChoice.fstate = cveForm.fstate.value + '';
             if (cveForm.fstate.value) {
                 filter.state = cveForm.fstate.value + '';
                 if (filter.state != 'RESERVED') {
@@ -502,6 +870,7 @@ async function cveGetList() {
         }
         if (cveForm.y) {
             filter.cve_id_year = cveForm.y.value + '';
+            cvePortalFilterChoice.y = filter.cve_id_year;
             if (filter.cve_id_year != currentYear) {
                 currentReserved = false;
             }
@@ -509,9 +878,6 @@ async function cveGetList() {
         if (cveForm.page) {
             filter.page = cveForm.page;
         }
-    }
-    if (document.getElementById('cveList')) {
-        document.getElementById('cveList').innerHTML = '<center><div class="spinner"></div></center>';
     }
     try {
         var ret = await csClient.getCveIds(filter);
@@ -545,6 +911,8 @@ async function cveGetList() {
         cveShowError(e);
         cveRenderList([]);
         return ([]);
+    } finally {
+        cveListFeedback.cancel();
     }
 }
 
@@ -570,93 +938,129 @@ async function cveReserve(yearOffset, number) {
 
 async function cveSelectLoad(event) {
     event.preventDefault();
+    var loadFeedback = new feedback(document.getElementById('load1'), 'text', 'Loading...');
     try {
-        cveLoad(event.target.elements.id.value)
+        await cveLoad(event.target.elements.id.value);
     } catch (e) {
         portalErrorHandler(e);
         cveShowError('Please login to CVE Portal. Your session may have expired!');
+    } finally {
+        loadFeedback.cancel();
     }
     return false;
 }
 
+function cveSyncLoadedUrl(cveId) {
+    if (!cveId || typeof updateDraftHistory !== 'function') {
+        return;
+    }
+    updateDraftHistory('./' + cveId, { id: cveId });
+}
+
+function cveLoadIntoEditor(res, cveId, message, edOpts) {
+    loadJSON(res, cveId, message, edOpts);
+    cveSyncLoadedUrl(cveId);
+    portalFocusEditor();
+}
+
+async function cveLoadFromCveOrg(cveId, suppressErrors) {
+    var loadFeedback = new feedback(document.getElementById('editorContent'), 'spinner');
+    try {
+
+        const response = await fetch('https://cveawg.mitre.org/api/cve/' + cveId, {
+            method: 'GET',
+            credentials: 'omit',
+            headers: {
+                'Accept': 'application/json, text/plain, */*'
+            }
+        });
+        if (response.ok) {
+            const data = await response.json();
+            if (data && data.cveMetadata) {
+                cveLoadIntoEditor(cveFixForVulnogram(data), cveId, "Loaded " + cveId + " from CVE.org");
+                return data;
+            }
+        } else if (!suppressErrors) {
+            errMsg.textContent = "CVE not found in CVE.org!";
+            infoMsg.textContent = "";
+            return null;
+        }
+    } catch (e) {
+        if (!suppressErrors) {
+            errMsg.textContent = "Failed to load valid CVE Record";
+            infoMsg.textContent = "";
+        }
+        console.error('Failed to fetch from CVE.org:', e);
+        return null;
+    } finally {
+        loadFeedback.cancel();
+    }
+    return null;
+}
+
 
 async function cveLoad(cveId) {
+    var cveOrgRes = await cveLoadFromCveOrg(cveId, true);
+    if (cveOrgRes) {
+        return cveOrgRes;
+    }
+
+    if (!csClient || typeof csClient.getCve !== 'function') {
+        errMsg.textContent = "CVE not found in CVE.org!";
+        infoMsg.textContent = "";
+        return null;
+    }
+
     try {
         var res = await csClient.getCve(cveId);
         if (res.cveMetadata) {
             if (res.containers) {
                 res = cveFixForVulnogram(res);
             } else {
-                console.log('no containers');
+                //console.log('no containers');
             }
             var edOpts = (res.cveMetadata.state == 'REJECTED') ? rejectEditorOption : publicEditorOption;
-            loadJSON(res, cveId, "Loaded " + cveId + " from CVE.org!", edOpts);
-
-            mainTabGroup.change(0);
+            var portalType = (csCache && csCache.portalType) ? csCache.portalType : 'production';
+            cveLoadIntoEditor(res, cveId, "Loaded " + cveId + " from CVE Services (" + portalType + ")", edOpts);
             return res;
-        } else {
-            try {
-                const response = await fetch('https://cveawg.mitre.org/api/cve/' + cveId);
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data && data.cveMetadata) {
-                        loadJSON(cveFixForVulnogram(data), cveId, "Loaded " + cveId + " from public API");
-                        mainTabGroup.change(0);
-                        return data;
-                    }
-                }
-            } catch (e2) {
-                errMsg.textContent = "Failed to load valid CVE Record";
-                infoMsg.textContent = "";
-                console.error('Failed to fetch from public API:', e2);
-            }
         }
     } catch (e) {
-        if (e == '404' || e.error == 'CVE_RECORD_DNE') {
-            var skeleton = {
-                "cveMetadata": {
-                    "cveId": cveId,
-                    "assigner": csCache.orgInfo ? csCache.orgInfo.UUID : "",
-                }
-            };
-            try {
-                var res = await csClient.getCveId(cveId);
-                var edOpts = publicEditorOption;
-                if (res.state == 'RESERVED') {
-                    skeleton.cveMetadata.state = "PUBLISHED";
-                } else if (res.state == 'REJECTED') {
-                    skeleton.cveMetadata.state = "REJECTED";
-                    edOpts = rejectEditorOption;
-                } else {
-                    return {};
-                }
-
-                loadJSON(skeleton, cveId, "Loaded " + cveId, edOpts);
-                mainTabGroup.change(0);
-                return skeleton;
-            } catch (e2) {
-                if (e2 == '404') {
-                    showAlert('CVE Not found!');
-                }
-            }
-        } else {
-            try {
-                const response = await fetch('https://cveawg.mitre.org/api/cve/' + cveId);
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data && data.cveMetadata) {
-                        loadJSON(cveFixForVulnogram(data), cveId, "Loaded " + cveId + " from public API");
-                        mainTabGroup.change(0);
-                        return data;
-                    }
-                }
-            } catch (e2) {
-                errMsg.textContent = "Failed to load valid CVE Record";
-                infoMsg.textContent = "";
-                console.error('Failed to fetch from public API:', e2);
-            }
+        if (e != '404' && e.error != 'CVE_RECORD_DNE') {
+            errMsg.textContent = "Failed to load valid CVE Record";
+            infoMsg.textContent = "";
+            return null;
         }
     }
+
+    var skeleton = {
+        "cveMetadata": {
+            "cveId": cveId,
+            "assigner": csCache.orgInfo ? csCache.orgInfo.UUID : "",
+        }
+    };
+    try {
+        var res = await csClient.getCveId(cveId);
+        var edOpts = publicEditorOption;
+        if (res.state == 'RESERVED') {
+            skeleton.cveMetadata.state = "PUBLISHED";
+        } else if (res.state == 'REJECTED') {
+            skeleton.cveMetadata.state = "REJECTED";
+            edOpts = rejectEditorOption;
+        } else {
+            return {};
+        }
+
+        cveLoadIntoEditor(skeleton, cveId, "Loaded " + cveId, edOpts);
+        return skeleton;
+    } catch (e2) {
+        if (e2 == '404') {
+            showAlert('CVE Not found!');
+        } else {
+            errMsg.textContent = "Failed to load valid CVE Record";
+            infoMsg.textContent = "";
+        }
+    }
+    return null;
 }
 
 async function cveReject(elem, event) {
@@ -691,9 +1095,183 @@ function filterADP(vr) {
         return vr
     }
 }
+
+function cvePublishErrorMessage(e) {
+    if (e == undefined || e == null) {
+        return "Unknown error";
+    }
+    if (typeof e == 'string') {
+        return e;
+    }
+    if (e.message) {
+        return e.message;
+    }
+    if (e.error) {
+        if (typeof e.error == 'string') {
+            return e.error;
+        }
+        if (e.error.message) {
+            return e.error.message;
+        }
+    }
+    try {
+        return JSON.stringify(e);
+    } catch (e2) {
+        return String(e);
+    }
+}
+
+function cveAlert(title, message, timer) {
+    if (typeof showAlert === 'function') {
+        showAlert(title, message, timer);
+        return;
+    }
+    var text = message ? (title + ': ' + message) : title;
+    if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+        window.alert(text);
+    } else {
+        console.warn(text);
+    }
+}
+
+function cveCloneDoc(doc) {
+    if (!doc) {
+        return doc;
+    }
+    if (typeof cloneJSON === 'function') {
+        return cloneJSON(doc);
+    }
+    return JSON.parse(JSON.stringify(doc));
+}
+
+function cvePreparePublishDoc(doc) {
+    var prepared = cveCloneDoc(doc);
+    if (typeof textUtil !== 'undefined' && textUtil && typeof textUtil.reduceJSON === 'function') {
+        prepared = textUtil.reduceJSON(prepared);
+    }
+    return prepared;
+}
+
+async function cveEnsurePublishSession() {
+    try {
+        await ensurePortalBootstrap();
+    } catch (e) {
+        portalErrorHandler(e);
+        return false;
+    }
+    var hasSession = false;
+    try {
+        hasSession = await hasActivePortalSession(csCache.url);
+    } catch (e) {
+        portalErrorHandler(e);
+        return false;
+    }
+    if (!hasSession) {
+        if (document.getElementById('port') && typeof showPortalLogin === 'function') {
+            showPortalLogin('Please login to publish CVE records.');
+            setPortalSidebarState(true);
+        } else {
+            cveAlert('CVE Services login required', 'Please login to publish CVE records.');
+        }
+        return false;
+    }
+    return true;
+}
+
+async function cveSubmitDocToPortal(doc) {
+    var j = cvePreparePublishDoc(doc);
+    if (!j || !j.cveMetadata || !j.cveMetadata.cveId) {
+        throw new Error('Missing cveMetadata.cveId');
+    }
+    var cveId = j.cveMetadata.cveId;
+    var cveState = j.cveMetadata.state == 'REJECTED' ? 'REJECTED' : 'PUBLISHED';
+    var cnaContainer = (j.containers && j.containers.cna) ? j.containers.cna : {};
+    var latestId = await csClient.getCveId(cveId);
+    var isReserved = latestId && latestId.state == 'RESERVED';
+    var ret = null;
+    if (isReserved) {
+        if (cveState == 'REJECTED') {
+            ret = await csClient.createRejectedCve(cveId, { cnaContainer: cnaContainer });
+        } else {
+            ret = await csClient.createCve(cveId, { cnaContainer: cnaContainer });
+        }
+    } else {
+        if (cveState == 'REJECTED') {
+            ret = await csClient.updateRejectedCve(cveId, { cnaContainer: cnaContainer });
+        } else {
+            ret = await csClient.updateCve(cveId, { cnaContainer: cnaContainer });
+        }
+    }
+    j.cveMetadata.state = cveState;
+    return {
+        response: ret,
+        doc: j
+    };
+}
+
+async function cvePublishItems(items, onStatus, options) {
+    var docs = Array.isArray(items) ? items : [];
+    var notify = typeof onStatus === 'function' ? onStatus : function () { };
+    var opts = options || {};
+    var summary = {
+        total: docs.length,
+        published: 0,
+        failed: 0,
+        skipped: 0
+    };
+    if (docs.length == 0) {
+        return summary;
+    }
+    var hasSession = await cveEnsurePublishSession();
+    if (!hasSession) {
+        summary.skipped = docs.length;
+        docs.forEach(function (entry) {
+            notify(entry, 'skipped', 'No active CVE Services session');
+        });
+        return summary;
+    }
+    for (var i = 0; i < docs.length; i++) {
+        var entry = docs[i];
+        var doc = entry ? entry.doc : null;
+        var id = entry && entry.id ? entry.id : (doc && doc.cveMetadata ? doc.cveMetadata.cveId : null);
+        if (!doc || !id) {
+            summary.skipped++;
+            notify(entry, 'skipped', 'Missing draft document');
+            continue;
+        }
+        notify(entry, 'publishing', 'Publishing');
+        try {
+            var publishResult = await cveSubmitDocToPortal(doc);
+            var ret = publishResult ? publishResult.response : null;
+            if (ret == null) {
+                throw new Error('No response from CVE Services. Please try again.');
+            }
+            summary.published++;
+            var publishMessage = ret && ret.message ? ret.message : ('Successfully submitted ' + id);
+            notify(entry, 'published', publishMessage, ret);
+            if (opts.removeDrafts && typeof draftsCache !== 'undefined' && draftsCache && draftsCache.remove) {
+                draftsCache.cancelSave();
+                await draftsCache.remove(id);
+            }
+        } catch (e) {
+            summary.failed++;
+            notify(entry, 'failed', cvePublishErrorMessage(e), e);
+        }
+    }
+    return summary;
+}
+
 async function cvePost() {
-    var vr = filterADP(docEditor.validation_results);
-    if (vr && vr.length == 0) {
+    var postFeedback = new feedback(document.getElementById('post1'), 'text', 'Posting...');
+    try {
+        var vr = filterADP(docEditor.validation_results);
+        if (!(vr && vr.length == 0)) {
+            cveAlert('Please fill the required fields');
+            return;
+        }
+        if (!(await cveEnsurePublishSession())) {
+            return;
+        }
         /*if (save != undefined) {
             await save();
         }*/
@@ -701,7 +1279,6 @@ async function cvePost() {
             //if (csCache.portalType === 'test') {
                 //console.log('uploading...');
                 var j = await mainTabGroup.getValue();
-                var j = textUtil.reduceJSON(j);
                 /*var pts = j.containers.cna.problemTypes;
                 if(pts && pts.length == 1 && pts[0].descriptions && pts[0].descriptions[0].description == undefined) {
                     delete j.containers.cna.problemTypes;
@@ -711,56 +1288,61 @@ async function cvePost() {
                     delete j.containers.cna.impacts;
                 }*/
                 var ret = null;
+                var publishErrorShown = false;
                 try {
-                    var latestId = await csClient.getCveId(j.cveMetadata.cveId);
-                    if (latestId.state == 'RESERVED') {
-                        //console.log('Creating');
-                        if (j.cveMetadata.state == 'PUBLISHED') {
-                            ret = await csClient.createCve(j.cveMetadata.cveId, { cnaContainer: j.containers.cna });
-                        } else if (j.cveMetadata.state == 'REJECTED') {
-                            ret = await csClient.createRejectedCve(j.cveMetadata.cveId, { cnaContainer: j.containers.cna });
-                        }
-                    } else {
-                        //console.log('uploading');
-                        if (j.cveMetadata.state == 'PUBLISHED') {
-                            ret = await csClient.updateCve(j.cveMetadata.cveId, { cnaContainer: j.containers.cna });
-                        } else if (j.cveMetadata.state == 'REJECTED') {
-                            ret = await csClient.updateRejectedCve(j.cveMetadata.cveId, { cnaContainer: j.containers.cna });
-                        }
-                    }
+                    var publishResult = await cveSubmitDocToPortal(j);
+                    j = publishResult.doc;
+                    ret = publishResult.response;
                 } catch (e) {
                     //console.log('Got error');
                     //console.log(e);
-                    if (e.error) {
-                        infoMsg.innerText = "";
-                        var alertMessage = "";
-                        if (e.details && e.details.errors) {
-                            showJSONerrors(e.details.errors.map(
-                                a => {
-                                    alertMessage = alertMessage + ', ' + a.message;
-                                    return ({
-                                        path: transatePath(a.instancePath),
-                                        message: a.message
-                                    });
-                                }
-                            ));
-                        } else if (e.error == 'UNAUTHORIZED') {
-                            cveShowError(e);
+                    console.error('Error publishing CVE record:', e);
+                    if (e && e.error) {
+                        if (typeof infoMsg !== 'undefined' && infoMsg) {
+                            infoMsg.innerText = "";
+                        }
+                        if (e.details && e.details.errors && e.details.errors.length > 0) {
+                            if (typeof showJSONerrors === 'function') {
+                                showJSONerrors(e.details.errors.map(
+                                    a => {
+                                        return ({
+                                            path: transatePath(a.instancePath),
+                                            message: a.message
+                                        });
+                                    }
+                                ));
+                            } else {
+                                await cveShowError(e);
+                            }
+                        } else {
+                            await cveShowError(e);
                         }
                     } else {
-                        showAlert('Error publishing! Got error ' + e)
+                        cveAlert("Error publishing CVE", cvePublishErrorMessage(e));
                     }
+                    publishErrorShown = true;
                 }
                 //console.log(ret);
-                if (ret != null && ret.message) {
-                    showAlert("CVE Record is Published", ret.message, 10000);
+                if (ret != null) {
+                    var publishMessage = ret.message ? ret.message : "Successfully submitted " + j.cveMetadata.cveId;
+                    cveAlert("CVE Record is Published", publishMessage, 10000);
                     var a = document.createElement('a');
                     a.setAttribute('href', (csCache.portalType == 'test'? 'https://test.cve.org/cverecord?id=' :  'https://www.cve.org/cverecord?id=')+j.cveMetadata.cveId);
                     a.setAttribute('target', '_blank');
-                    a.innerText = ret.message;
-                    infoMsg.innerText = '';
-                    infoMsg.appendChild(a);
-                    hideJSONerrors();
+                    a.innerText = j.cveMetadata.cveId;
+                    if (typeof infoMsg !== 'undefined' && infoMsg) {
+                        infoMsg.innerText = '';
+                        infoMsg.appendChild(a);
+                    }
+                    if (typeof hideJSONerrors === 'function') {
+                        hideJSONerrors();
+                    }
+                    if (typeof draftsCache !== 'undefined' && draftsCache && draftsCache.remove) {
+                        draftsCache.cancelSave();
+                        await draftsCache.remove(j.cveMetadata.cveId);
+                    }
+                } else if (!publishErrorShown) {
+                    cveAlert("Error publishing CVE", "No response from CVE Services. Please try again.");
                 }
             //} else {
             //    showAlert('CVE posting is not currently supported by production CVE services! Try Logging to Test Portal instance');
@@ -768,9 +1350,529 @@ async function cvePost() {
         } catch (e) {
             portalErrorHandler(e);
         }
-    } else {
-        showAlert('Please fix errors before posting - Please ignore the ADP errors');
+    } finally {
+        postFeedback.cancel();
     }
+}
+
+async function postADP(orgID) {
+    try {
+        var currentOrgId = csCache && csCache.orgInfo ? csCache.orgInfo.UUID : null;
+        if (!currentOrgId) {
+            csCache.orgInfo = await csClient.getOrgInfo();
+            currentOrgId = csCache.orgInfo ? csCache.orgInfo.UUID : null;
+        }
+        if (currentOrgId != orgID && orgID != '00000000-0000-4000-9000-000000000000') {
+            cveAlert('This ADP information is not from Current CNA');
+            return;
+        }
+        var j = await mainTabGroup.getValue();
+        var cveId = j && j.cveMetadata ? j.cveMetadata.cveId : null;
+        var adp = j && j.containers && Array.isArray(j.containers.adp) ? j.containers.adp : [];
+        var matches = adp.filter(function (a) {
+            return a && a.providerMetadata && a.providerMetadata.orgId == orgID;
+        });
+        if (matches.length > 1) {
+            cveAlert('Error posting ADP', 'Multiple ADP information found for this CNA. Delete extras and try again.');
+            return;
+        }
+        if (matches.length == 1) {
+            if (!(await cveEnsurePublishSession())) {
+                return;
+            }
+            await csClient.updateAdp(cveId, { adpContainer: matches[0] });
+        }
+    } catch (e) {
+        cveAlert('Error posting ADP', cvePublishErrorMessage(e));
+    }
+}
+
+function cveTeamGetRowById(cveId) {
+    if (!cveId) {
+        return null;
+    }
+    var rowById = document.getElementById('vgListItem' + cveId);
+    if (rowById) {
+        return rowById;
+    }
+    var checks = document.querySelectorAll('#vgListTable .rowCheck');
+    for (var i = 0; i < checks.length; i++) {
+        if (checks[i].value == cveId) {
+            return checks[i].closest('tr');
+        }
+    }
+    return null;
+}
+
+function cveTeamGetStatusNode(cveId, createIfMissing) {
+    var row = cveTeamGetRowById(cveId);
+    if (!row) {
+        return null;
+    }
+    var titleCell = row.querySelector('td.title, td.Title, td.TITLE');
+    if (!titleCell) {
+        var cells = row.querySelectorAll('td');
+        if (cells.length > 0) {
+            var logicalTitleIndex = row.querySelector('td.rowCheckLabel') ? 2 : 1;
+            if (cells.length > logicalTitleIndex) {
+                titleCell = cells[logicalTitleIndex];
+            }
+        }
+    }
+    if (!titleCell) {
+        return null;
+    }
+    var statusNode = titleCell.querySelector('.teamPublishState');
+    if (!statusNode && createIfMissing) {
+        statusNode = document.createElement('small');
+        statusNode.className = 'teamPublishState block sml';
+        titleCell.appendChild(statusNode);
+    }
+    return statusNode;
+}
+
+function cveTeamSetRowStatus(cveId, text, isError) {
+    var statusNode = cveTeamGetStatusNode(cveId, !!text);
+    if (!statusNode) {
+        return;
+    }
+    if (!text) {
+        statusNode.remove();
+        return;
+    }
+    statusNode.innerText = text;
+    if (isError) {
+        statusNode.classList.add('tred');
+    } else {
+        statusNode.classList.remove('tred');
+    }
+}
+
+var cveDraftPublishEntries = [];
+var cveDraftPublishStatusMap = {};
+var cveDraftPublishRetainedRowsMap = {};
+var cveDraftPublishTableSorter = null;
+
+function cveDraftExtractTitle(doc) {
+    if (!doc || !doc.containers || !doc.containers.cna) {
+        return '';
+    }
+    var cna = doc.containers.cna;
+    if (cna.title) {
+        return String(cna.title);
+    }
+    if (typeof getBestTitle === 'function') {
+        try {
+            return String(getBestTitle(cna) || '');
+        } catch (e) {
+            // ignore and continue with fallback
+        }
+    }
+    if (Array.isArray(cna.descriptions)) {
+        var desc = cna.descriptions.find(function (d) {
+            return d && d.value && (!d.lang || d.lang == 'en');
+        });
+        if (desc && desc.value) {
+            return String(desc.value);
+        }
+    }
+    return '';
+}
+
+function cveDraftExtractCvss(doc) {
+    if (!doc || !doc.containers || !doc.containers.cna || !Array.isArray(doc.containers.cna.metrics)) {
+        return '';
+    }
+    var metricKeys = ['cvssV4_0', 'cvssV3_1', 'cvssV3_0', 'cvssV2_0'];
+    for (var i = 0; i < doc.containers.cna.metrics.length; i++) {
+        var metric = doc.containers.cna.metrics[i];
+        if (!metric || typeof metric !== 'object') {
+            continue;
+        }
+        for (var j = 0; j < metricKeys.length; j++) {
+            var key = metricKeys[j];
+            var cvss = metric[key];
+            if (!cvss || cvss.baseScore === undefined || cvss.baseScore === null || cvss.baseScore === '') {
+                continue;
+            }
+            var score = Number(cvss.baseScore);
+            if (isNaN(score)) {
+                continue;
+            }
+            var severity = cvssjs.severityLevel(score);
+            var scoreText = String(cvss.baseScore);
+            return '<b class="tag CVSS ' + severity + '">' + scoreText + '</b>';
+        }
+    }
+    return '';
+}
+
+function cveDraftCanPublish(entry) {
+    if (!entry || !entry.doc || !entry.id) {
+        return false;
+    }
+    if ((typeof entry.errorCount === 'number' ? entry.errorCount : 0) !== 0) {
+        return false;
+    }
+    return !!(entry.doc.cveMetadata && entry.doc.cveMetadata.cveId);
+}
+
+function cveDraftPublishSetStatus(entryId, text, isError) {
+    if (!text) {
+        delete cveDraftPublishStatusMap[entryId];
+    } else {
+        cveDraftPublishStatusMap[entryId] = {
+            text: text,
+            isError: !!isError
+        };
+    }
+    var titleCell = document.getElementById('draftPublishTitle-' + entryId);
+    if (!titleCell) {
+        return;
+    }
+    var statusNode = titleCell.querySelector('.draftPublishState');
+    if (!statusNode && text) {
+        statusNode = document.createElement('small');
+        statusNode.className = 'draftPublishState block sml';
+        titleCell.appendChild(statusNode);
+    }
+    if (!statusNode) {
+        return;
+    }
+    if (!text) {
+        statusNode.remove();
+        return;
+    }
+    var safeText = String(text).replace(/[&<>"']/g, function (ch) {
+        return {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[ch];
+    });
+    safeText = safeText.replace(/CVE-\d{4}-\d{4,12}/gi, function (idText) {
+        var cveId = idText.toUpperCase();
+        return '<a href="https://vulnogram.org/seaview/?' + encodeURIComponent(cveId) + '" target="_blank" rel="noopener noreferrer">' + cveId + '</a>';
+    });
+    statusNode.innerHTML = safeText;
+    if (isError) {
+        statusNode.classList.add('tred');
+    } else {
+        statusNode.classList.remove('tred');
+    }
+}
+
+function cveDraftPublishSetSummary(text, isError) {
+    var msg = document.getElementById('draftPublishStatus');
+    if (!msg) {
+        return;
+    }
+    msg.innerText = text || '';
+    if (isError) {
+        msg.classList.add('tred');
+    } else {
+        msg.classList.remove('tred');
+    }
+}
+
+function cveDraftPublishToggleAll(checkAll) {
+    var rows = document.querySelectorAll('#draftPublishRows input[name="draftPublishSelection"]');
+    rows.forEach(function (el) {
+        if (!el.disabled) {
+            el.checked = !!checkAll;
+        }
+    });
+}
+
+async function cveRefreshDraftPublishDialog() {
+    if (!soloMode) {
+        return;
+    }
+    var tbody = document.getElementById('draftPublishRows');
+    if (!tbody) {
+        return;
+    }
+    cveDraftPublishSetSummary('Loading drafts...');
+    try {
+        var entries = await draftsCache.getAll();
+        entries = (entries || []).filter(function (entry) {
+            return entry && entry.id && entry.doc;
+        });
+        entries.sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
+        cveDraftPublishEntries = entries;
+        var entryById = {};
+        entries.forEach(function (entry) {
+            entryById[entry.id] = true;
+        });
+        var retainedEntries = Object.keys(cveDraftPublishRetainedRowsMap).map(function (id) {
+            return cveDraftPublishRetainedRowsMap[id];
+        }).filter(function (entry) {
+            return entry && entry.id && !entryById[entry.id];
+        });
+        retainedEntries.sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
+        var allEntries = entries.concat(retainedEntries);
+        var nextStatusMap = {};
+        allEntries.forEach(function (entry) {
+            if (entry && entry.id && cveDraftPublishStatusMap[entry.id]) {
+                nextStatusMap[entry.id] = cveDraftPublishStatusMap[entry.id];
+            }
+        });
+        cveDraftPublishStatusMap = nextStatusMap;
+        tbody.textContent = '';
+        if (allEntries.length == 0) {
+            var emptyRow = document.createElement('tr');
+            var emptyCell = document.createElement('td');
+            emptyCell.colSpan = 7;
+            emptyCell.innerText = 'No drafts found in local cache.';
+            emptyRow.appendChild(emptyCell);
+            tbody.appendChild(emptyRow);
+            var emptyTable = document.getElementById('draftPublishTable');
+            if (!cveDraftPublishTableSorter) {
+                cveDraftPublishTableSorter = new Tablesort(emptyTable);
+            } else {
+                cveDraftPublishTableSorter.refresh();
+            }
+            cveDraftPublishSetSummary('No drafts found.');
+            return;
+        }
+        var readyCount = 0;
+        allEntries.forEach(function (entry) {
+            var isRetainedPublished = entry.retainedPublished === true;
+            var warningCount = isRetainedPublished ? 0 : (typeof entry.errorCount === 'number' ? entry.errorCount : 0);
+            var canPublish = !isRetainedPublished && cveDraftCanPublish(entry);
+            if (canPublish) {
+                readyCount++;
+            }
+            var tr = document.createElement('tr');
+            if (warningCount > 0) {
+                tr.classList.add('dis');
+            }
+
+            var tdSelect = document.createElement('td');
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.name = 'draftPublishSelection';
+            cb.value = entry.id;
+            cb.disabled = !canPublish;
+            cb.checked = canPublish;
+            tdSelect.appendChild(cb);
+            tr.appendChild(tdSelect);
+
+            var tdId = document.createElement('td');
+            var idLink = document.createElement('a');
+            idLink.className = 'lbl';
+            idLink.innerText = entry.id;
+            if (isRetainedPublished) {
+                idLink.href = 'https://vulnogram.org/seaview/?' + encodeURIComponent(entry.id);
+                idLink.target = '_blank';
+                idLink.rel = 'noopener noreferrer';
+                idLink.title = 'Open published CVE ' + entry.id + ' in seaview';
+            } else {
+                idLink.href = '#';
+                idLink.title = 'Open draft ' + entry.id;
+                idLink.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    idLink.closest('dialog').close();
+                    draftsUi.toggle.checked = true;
+                    loadDraftFromCache(entry.id, false);
+                });
+            }
+            tdId.appendChild(idLink);
+            var warningBadge = document.createElement('span');
+            warningBadge.className = 'bdg';
+            warningBadge.title = String(warningCount);
+            warningBadge.innerText = String(warningCount);
+            tdId.appendChild(document.createTextNode(' '));
+            tdId.appendChild(warningBadge);
+            tr.appendChild(tdId);
+
+            var tdTitle = document.createElement('td');
+            tdTitle.id = 'draftPublishTitle-' + entry.id;
+            var title = cveDraftExtractTitle(entry.doc);
+            tdTitle.innerText = title || '';
+            if (title) {
+                tdTitle.title = title;
+            }
+            var status = cveDraftPublishStatusMap[entry.id];
+            if (status && status.text) {
+                var titleStatus = document.createElement('small');
+                titleStatus.className = 'draftPublishState block sml';
+                var titleSafeText = String(status.text).replace(/[&<>"']/g, function (ch) {
+                    return {
+                        '&': '&amp;',
+                        '<': '&lt;',
+                        '>': '&gt;',
+                        '"': '&quot;',
+                        "'": '&#39;'
+                    }[ch];
+                });
+                titleSafeText = titleSafeText.replace(/CVE-\d{4}-\d{4,12}/gi, function (idText) {
+                    var cveId = idText.toUpperCase();
+                    return '<a href="https://vulnogram.org/seaview/?' + encodeURIComponent(cveId) + '" target="_blank" rel="noopener noreferrer">' + cveId + '</a>';
+                });
+                titleStatus.innerHTML = titleSafeText;
+                if (status.isError) {
+                    titleStatus.classList.add('tred');
+                }
+                tdTitle.appendChild(titleStatus);
+            }
+            tr.appendChild(tdTitle);
+
+            var tdCvss = document.createElement('td');
+            tdCvss.innerHTML = cveDraftExtractCvss(entry.doc);
+            tr.appendChild(tdCvss);
+
+            var tdPublicOn = document.createElement('td');
+            var publicOn = entry && entry.doc && entry.doc.containers && entry.doc.containers.cna ? entry.doc.containers.cna.datePublic : null;
+            if (publicOn) {
+                var publicOnDate = new Date(publicOn);
+                if (!isNaN(publicOnDate.getTime())) {
+                    tdPublicOn.setAttribute('data-sort', String(publicOnDate.getTime()));
+                    if (typeof textUtil !== 'undefined' && textUtil && typeof textUtil.formatFriendlyDate === 'function') {
+                        tdPublicOn.innerText = textUtil.formatFriendlyDate(publicOnDate);
+                    } else {
+                        tdPublicOn.innerText = publicOnDate.toISOString();
+                    }
+                }
+            }
+            tr.appendChild(tdPublicOn);
+
+            var tdTime = document.createElement('td');
+            if (entry.updatedAt) {
+                var updatedAt = new Date(entry.updatedAt);
+                tdTime.setAttribute('data-sort', String(updatedAt.getTime()));
+                if (typeof textUtil !== 'undefined' && textUtil && typeof textUtil.formatFriendlyDate === 'function') {
+                    tdTime.innerText = textUtil.formatFriendlyDate(updatedAt);
+                } else {
+                    tdTime.innerText = updatedAt.toISOString();
+                }
+            }
+            tr.appendChild(tdTime);
+
+            var tdActions = document.createElement('td');
+            tdActions.style.textAlign = 'right';
+            if (!isRetainedPublished) {
+                var deleteBtn = document.createElement('button');
+                deleteBtn.type = 'button';
+                deleteBtn.className = 'sbn fbn vgi-del';
+                deleteBtn.title = 'Delete draft ' + entry.id;
+                deleteBtn.setAttribute('aria-label', 'Delete draft ' + entry.id);
+                deleteBtn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    cveDraftPublishSetStatus(entry.id, '');
+                    cveDraftPublishSetSummary('Deleting draft ' + entry.id + '...');
+                    draftsCache.cancelSave();
+                    Promise.resolve(draftsCache.remove(entry.id)).then(function () {
+                        return cveRefreshDraftPublishDialog();
+                    }).then(function () {
+                        cveDraftPublishSetSummary('Deleted draft ' + entry.id + '.');
+                    }).catch(function (err) {
+                        cveDraftPublishSetSummary(cvePublishErrorMessage(err), true);
+                    });
+                });
+                tdActions.appendChild(deleteBtn);
+            }
+            tr.appendChild(tdActions);
+            tbody.appendChild(tr);
+        });
+        var draftTable = document.getElementById('draftPublishTable');
+        if (!cveDraftPublishTableSorter) {
+            cveDraftPublishTableSorter = new Tablesort(draftTable);
+        } else {
+            cveDraftPublishTableSorter.refresh();
+        }
+        var summaryMessage = '';
+        if (entries.length > 0) {
+            summaryMessage = 'Found ' + entries.length + ' drafts. Ready to publish: ' + readyCount + '.' + (readyCount < entries.length ? ' Fix errors to publish the remaining.' : '');
+        }
+        if (retainedEntries.length > 0) {
+            summaryMessage += (summaryMessage ? ' ' : '') + 'Published references: ' + retainedEntries.length + '.';
+        }
+        cveDraftPublishSetSummary(summaryMessage);
+    } catch (e) {
+        cveDraftPublishSetSummary(cvePublishErrorMessage(e), true);
+    }
+}
+
+async function cveOpenDraftPublishDialog(event) {
+    if (event && event.preventDefault) {
+        event.preventDefault();
+    }
+    if (!soloMode) {
+        return false;
+    }
+    var dialog = document.getElementById('draftPublishDialog');
+    if (!dialog) {
+        return false;
+    }
+    await cveRefreshDraftPublishDialog();
+    if (!dialog.open) {
+        dialog.showModal();
+    }
+    return false;
+}
+
+async function cvePublishSelectedDrafts(event) {
+    if (event && event.preventDefault) {
+        event.preventDefault();
+    }
+    if (!soloMode) {
+        return false;
+    }
+    var selected = Array.from(document.querySelectorAll('#draftPublishRows input[name="draftPublishSelection"]:checked'))
+        .map(function (el) { return el.value; });
+    if (selected.length == 0) {
+        cveDraftPublishSetSummary('Select one or more drafts with 0 errors.', true);
+        return false;
+    }
+    var selectedSet = new Set(selected);
+    var items = cveDraftPublishEntries.filter(function (entry) {
+        return selectedSet.has(entry.id) && cveDraftCanPublish(entry);
+    }).map(function (entry) {
+        return { id: entry.id, doc: entry.doc };
+    });
+    if (items.length == 0) {
+        cveDraftPublishSetSummary('No publishable drafts selected.', true);
+        return false;
+    }
+    cveDraftPublishSetSummary('Publishing ' + items.length + ' draft(s)...');
+    var summary = await cvePublishItems(items, function (entry, state, message) {
+        if (!entry || !entry.id) {
+            return;
+        }
+        if (state == 'publishing') {
+            cveDraftPublishSetStatus(entry.id, 'Publishing...');
+        } else if (state == 'published') {
+            cveDraftPublishRetainedRowsMap[entry.id] = {
+                id: entry.id,
+                doc: entry.doc,
+                errorCount: 0,
+                updatedAt: Date.now(),
+                retainedPublished: true
+            };
+            var publishStatusMessage = message || ('Successfully submitted ' + entry.id);
+            if (!/CVE-\d{4}-\d{4,12}/i.test(publishStatusMessage)) {
+                publishStatusMessage += ' ' + entry.id;
+            }
+            cveDraftPublishSetStatus(entry.id, publishStatusMessage);
+        } else if (state == 'failed') {
+            cveDraftPublishSetStatus(entry.id, message, true);
+        } else if (state == 'skipped') {
+            cveDraftPublishSetStatus(entry.id, message, true);
+        }
+    }, { removeDrafts: true });
+    await cveRefreshDraftPublishDialog();
+    if (summary.skipped == summary.total && summary.total > 0 && summary.failed == 0 && summary.published == 0) {
+        cveDraftPublishSetSummary('Login required to publish selected drafts.', true);
+    } else if (summary.failed > 0) {
+        cveDraftPublishSetSummary('Published ' + summary.published + ' of ' + summary.total + '. Failed: ' + summary.failed + '.', true);
+    } else {
+        cveDraftPublishSetSummary('Successfully published ' + summary.published + ' draft(s).');
+    }
+    return false;
 }
 
 async function cveReserveAndRender(yearOffset, number) {
@@ -782,7 +1884,20 @@ async function cveReserveAndRender(yearOffset, number) {
         } else {
             m.innerText = "Failed to get a CVE ID";
         }
-        cvePortalFilter.reset();
+        var cveForm = document.getElementById("cvePortalFilter");
+        if (cveForm) {
+            if (cveForm.fstate) {
+                cveForm.fstate.value = 'RESERVED';
+            }
+            var reservedState = document.getElementById("chkres");
+            if (reservedState) {
+                reservedState.checked = true;
+            }
+            if (cveForm.y) {
+                cveForm.y.value = String(currentYear + (yearOffset ? yearOffset : 0));
+            }
+            cveForm.page = 0;
+        }
         await cveGetList();
         return r;
     } catch (e) {

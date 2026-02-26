@@ -8,15 +8,16 @@ var cve5 = require('./cve5.schema.json');
 module.exports = {
     conf: {
         title: 'CVE: Common Vulnerabilities and Exposures',
-        name: 'CVE 5.0',
+        name: 'CVE',
         uri: '/cve5/',
-        class: 'vgi-alert',
+        class: 'vgi-cvev',
+        disableDrafts: false,
         order: 0.12, //Where to place the section on heading?
         shortcuts: [
             {
                 label: 'My CVEs',
                 href: function (g) {
-                    return ('/cve/?state=RESERVED,DRAFT,REVIEW,READY&owner=' + g.user.username);
+                    return ('/cve5/?state=draft,new,open,review,waiting,pending&owner=' + g.user.username);
                 },
                 class: 'vgi-folder'
             },
@@ -152,23 +153,11 @@ module.exports = {
                 duplicate: 'ext'
             }
         },
-        cveState: {
-            path: 'body.cveMetadata.state',
-            //chart: true,
-            tabs: true,
-            enum: ["RESERVED", "PUBLISHED", "REJECTED"],
-            class: 'nobr ',
-            icons: {
-                RESERVED: 'edit',
-                PUBLISHED: 'globe',
-                REJECTED: 'no'
-            }
-        },
         cvss: {
-            path: 'body.containers.cna.metrics.cvssV3_1.baseScore',
+            path: 'body.containers.cna.metrics.cvssV4_0.baseScore',
         },
         severity: {
-            path: 'body.containers.cna.metrics.cvssV3_1.baseSeverity',
+            path: 'body.containers.cna.metrics.cvssV4_0.baseSeverity',
             chart: true,
             hideColumn: true
         },
@@ -193,7 +182,7 @@ module.exports = {
         /*        Advisory: {
                     path: 'body.containers.cna.source.advisory'
                 },*/
-        date: {
+        publicOn: {
             path: 'body.containers.cna.datePublic',
             bulk: true
         },
@@ -224,17 +213,12 @@ module.exports = {
             bulk: true,
             enum: ['example', 'team', 'memebers', 'change', 'in', 'conf.js'],
             class: 'nobr '
-        },
-        /*  'state!': {
-              path: 'body.CVE_data_meta.STATE',
-              chart: false,
-              bulk: false,
-              queryOperator: '$ne'
-          }*/
+        }
     },
     schema: cve5,
     validators: [
         function (schema, value, path) {
+            const semverPattern = /^((0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?)|0|\*$/;
             var errors = [];
             if (schema.id == "desc") {
                 if((value.value == "")) {
@@ -353,6 +337,40 @@ module.exports = {
                         message: 'Changes are used only for ranges. Clear this or define a range'
                     });
                 }
+                if(value.versionType === 'semver') {
+                    if(value.version != undefined && !semverPattern.test(value.version) && value.version != '0') {
+                        errors.push({
+                            path: path+'.version',
+                            property: 'format',
+                            message: 'Enter a valid semver version'
+                        });
+                    }
+                    if(value.lessThan != undefined && !semverPattern.test(value.lessThan)) {
+                        errors.push({
+                            path: path+'.lessThan',
+                            property: 'format',
+                            message: 'Enter a valid semver version'
+                        });
+                    }
+                    if(value.lessThanOrEqual != undefined && !semverPattern.test(value.lessThanOrEqual)) {
+                        errors.push({
+                            path: path+'.lessThanOrEqual',
+                            property: 'format',
+                            message: 'Enter a valid semver version'
+                        });
+                    }
+                    if(Array.isArray(value.changes)) {
+                        for(var i = 0; i < value.changes.length; i++) {
+                            if(value.changes[i] && value.changes[i].at != undefined && !semverPattern.test(value.changes[i].at)) {
+                                errors.push({
+                                    path: path+'.changes.'+i+'.at',
+                                    property: 'format',
+                                    message: 'Enter a valid semver version'
+                                });
+                            }
+                        }
+                    }
+                }
             }
             if(schema.id == "xtag") {
                 if(value && schema.items && schema.items.examples) {
@@ -380,11 +398,34 @@ module.exports = {
             }
             if (schema.id == "datePublic") {
                 if(value && (new Date(value) > new Date())) {
-                    errors.push({
+                    //TODO. this should be a warning, not error.
+                    /*errors.push({
                         path: path,
                         property: 'format',
                         message: 'Date is in the future!'
-                    });
+                    });*/
+                }
+            }
+            if (path == "root.containers.adp") {
+                if (value && Array.isArray(value)) {
+                    var seenOrgIds = {};
+                    for (var i = 0; i < value.length; i++) {
+                        var orgId = value[i]
+                            && value[i].providerMetadata
+                            && value[i].providerMetadata.orgId;
+                        if (!orgId) {
+                            continue;
+                        }
+                        if (seenOrgIds[orgId] != undefined) {
+                            errors.push({
+                                path: path+'.' + i,
+                                property: 'format',
+                                message: 'An extra ADP containers from the same organization. Keep one.'
+                            });
+                        } else {
+                            seenOrgIds[orgId] = i;
+                        }
+                    }
                 }
             }
             return errors;
