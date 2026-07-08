@@ -17,7 +17,7 @@ module.exports = {
             {
                 label: 'My CVEs',
                 href: function (g) {
-                    return ('/cve5/?state=draft,new,open,review,waiting,pending&owner=' + g.user.username);
+                    return ('/cve5/?state=draft,pending&owner=' + g.user.username);
                 },
                 class: 'vgi-folder'
             },
@@ -63,13 +63,9 @@ module.exports = {
         'duplicate':'ext',
         'CVE_data_meta': 'info',
         'STATE': 'knob',
-        'new': 'inbox',
-        'closed': 'closed',
-        'open': 'inbox1',
         'draft': 'text',
-        'review': 'eye',
-        'waiting': 'wait',
-        'pending':'cal',
+        'pending': 'wait',
+        'done': 'closed',
         'vectorString': 'title',
         'baseScore':'dial',
         'baseSeverity':'knob',
@@ -122,11 +118,13 @@ module.exports = {
         state: {
             path: 'body.CNA_private.state',
             tabs: true,
+            chart: true,
             bulk: true,
         },
         type: {
             path: 'body.CNA_private.type',
             tabs: true,
+            chart: true,
             bulk: true
         },
         cvss: {

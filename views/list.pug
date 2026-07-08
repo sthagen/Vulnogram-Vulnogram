@@ -97,6 +97,7 @@ mixin paginate
             input.btn(type="submit", value="filter")
         | 
         label.lbl.vgi-fold(for="compactTable",onclick="this.setAttribute('val', document.getElementById(this.getAttribute('for')).checked)",val="")
+        button.lbl.vgi-download(type="button",title="Download table as CSV",onclick="exportTableCSV('vgListTable', " + JSON.stringify(schemaName) + ")") Export
 
 mixin bulkTable(docs, columns, id)
     if !docs || docs.length == 0
@@ -183,6 +184,33 @@ block append head
 block append scripts
     script.
         var csrfToken = !{JSON.stringify(csrfToken)};
+        function exportTableCSV(tableId, baseName) {
+            var table = document.getElementById(tableId);
+            if (!table) return;
+            var rows = table.querySelectorAll('tr');
+            var csv = [];
+            for (var i = 0; i < rows.length; i++) {
+                var cells = rows[i].querySelectorAll('th, td');
+                var line = [];
+                for (var j = 0; j < cells.length; j++) {
+                    // Skip the row-select / select-all checkbox column
+                    if (cells[j].querySelector('input[type="checkbox"]')) continue;
+                    var text = (cells[j].innerText || cells[j].textContent || '').replace(/\s+/g, ' ').trim();
+                    line.push('"' + text.replace(/"/g, '""') + '"');
+                }
+                if (line.length) csv.push(line.join(','));
+            }
+            var stamp = new Date().toISOString().slice(0, 10);
+            var filename = (baseName || 'export') + '-' + stamp + '.csv';
+            var blob = new Blob(['﻿' + csv.join('\r\n')], {type: 'text/csv;charset=utf-8;'});
+            var link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+        }
     script(type="module")
         include ../src/js/edit/feedback.js
 

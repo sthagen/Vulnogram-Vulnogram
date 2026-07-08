@@ -36,7 +36,10 @@ function hidepopups() {
 
 async function transferRecord() {
     var id = getDocID();
-    if (!id) return;
+    if (!id) {
+        if (typeof showAlert === 'function') showAlert('No CVE loaded', 'Load a valid CVE record before transferring.');
+        return;
+    }
     var el = document.createElement('a');
     el.setAttribute('data', id);
     await cveTransfer(el, null);
@@ -44,6 +47,10 @@ async function transferRecord() {
 
 async function rejectRecord() {
     var id = getDocID();
+    if (!id) {
+        if (typeof showAlert === 'function') showAlert('No CVE loaded', 'Load a valid CVE record before rejecting.');
+        return;
+    }
     if (window.confirm('Do you want to reject ' + id + '? All vulnerability details will be removed.')) {
         loadJSON({
             cveMetadata: {

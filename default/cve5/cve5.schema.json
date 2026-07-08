@@ -29,18 +29,19 @@
           "type": "string",
           "format": "radio",
           "enum": [
-            "new",
-            "open",
             "draft",
-            "review",
-            "waiting",
             "pending",
-            "closed"
+            "done"
           ],
-          "default": "new",
+          "default": "draft",
           "options": {
             "grid_columns": 12,
-            "class": "vgi-knob"
+            "class": "vgi-knob",
+            "icons": {
+              "draft": "text",
+              "pending": "wait",
+              "done": "closed"
+            }
           }
         },
         "type": {
@@ -58,7 +59,16 @@
           "default": "unsure",
           "options": {
             "grid_columns": 12,
-            "class": "vgi-bucket"
+            "class": "vgi-bucket",
+            "icons": {
+              "unsure": "what",
+              "no-vuln": "safe",
+              "advisory": "alert",
+              "no-advisory": "no",
+              "doc": "text",
+              "misc": "misc",
+              "duplicate": "ext"
+            }
           }
         },
         "publish": {
@@ -71,21 +81,21 @@
               "type": "string",
               "template": "(context.d ? context.d.substr(0,7) : '')",
               "watch": {
-                "d": "root.containers.cna.providerMetadata.datePublic"
+                "d": "root.containers.cna.datePublic"
               }
             },
             "year": {
               "type": "string",
               "template": "(context.d ? context.d.substr(0,4) : '')",
               "watch": {
-                "d": "root.containers.cna.providerMetadata.datePublic"
+                "d": "root.containers.cna.datePublic"
               }
             },
             "month": {
               "type": "string",
               "template": "(context.d ? context.d.substr(5,2) : '')",
               "watch": {
-                "d": "root.containers.cna.providerMetadata.datePublic"
+                "d": "root.containers.cna.datePublic"
               }
             }
           }
