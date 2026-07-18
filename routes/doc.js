@@ -109,6 +109,14 @@ module.exports = function (name, opts) {
         return false;
     }
 
+    // Facets named as an extLink source (facet.extLink.from) must stay in the
+    // projection even when hideColumn keeps them out of the table columns.
+    var extLinkSources = new Set();
+    for (key in opts.facet) {
+        if (opts.facet[key].extLink && opts.facet[key].extLink.from) {
+            extLinkSources.add(opts.facet[key].extLink.from);
+        }
+    }
     for (key in opts.facet) {
         var options = opts.facet[key];
         if (typeof options.path === 'string') {
@@ -120,7 +128,7 @@ module.exports = function (name, opts) {
         }
         //toIndex[options.path] = options.sort ? options.sort : 1;
 
-        if (!options.hideColumn) {
+        if (!options.hideColumn || extLinkSources.has(key)) {
             if (options.project) {
                 project[key] = options.project;
             } else if (Array.isArray(options.path)) {
@@ -132,7 +140,9 @@ module.exports = function (name, opts) {
             } else if (Object.keys(options.path).length != 0) {
                 project[key] = options.path;
             }
-            columns.push(key);
+            if (!options.hideColumn) {
+                columns.push(key);
+            }
         }
         if (options.tabs) {
             toIndex[options.path] = options.sort ? options.sort : 1;

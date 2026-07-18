@@ -106,11 +106,21 @@ function getClientPortalUrl() {
     return normalizePortalUrl(csClient._middleware.serviceUri);
 }
 
+function portalBasePath() {
+    var name = (typeof schemaName === 'string' && schemaName) ? schemaName : '';
+    if (!name && document.body && typeof document.body.className === 'string') {
+        name = document.body.className.trim().split(/\s+/)[0];
+    }
+    return '/' + (name || 'cve5') + '/';
+}
+
 function ensureCsClient(url) {
     const targetUrl = normalizePortalUrl(url);
     const currentUrl = getClientPortalUrl();
     if (!csClient || currentUrl !== targetUrl) {
-        csClient = new CveServices(targetUrl, "./static/cve5sw.js");
+        // Absolute SW path: a document-relative "./static/" breaks at the
+        // section root when the URL has no trailing slash (/cve -> /static/).
+        csClient = new CveServices(targetUrl, portalBasePath() + 'static/cve5sw.js');
     }
     return csClient;
 }
@@ -768,7 +778,7 @@ async function cveAddUser(f) {
 async function cveRenderList(l, refreshEditor) {
     if (l && document.getElementById('cveList')) {
         var canInlineLoad = !!(document.getElementById('docEditor') && typeof loadJSON === 'function' && typeof mainTabGroup !== 'undefined');
-        var docPathBase = '/' + ((typeof schemaName === 'string' && schemaName) ? schemaName : 'cve5') + '/';
+        var docPathBase = portalBasePath();
         document.getElementById('cveList').innerHTML = cveRender({
             ctemplate: 'listIds',
             cveIds: l,

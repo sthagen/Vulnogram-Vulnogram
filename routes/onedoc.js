@@ -2,10 +2,10 @@ const express = require('express');
 const csurf = require('csurf');
 var csrfProtection = csurf();
 const textUtil = require('../src/js/edit/util.js');
-var jsonpatch = require('json-patch-extended');
 var _ = require('lodash');
 const docModel = require('../models/doc');
 const querymw = require('../lib/querymw');
+const history = require('../lib/history');
 
 const {
     check,
@@ -139,45 +139,7 @@ module.exports = function (Document, opts) {
     });
 
 
-    module.addModelHistory = function (model, oldDoc, newDoc) {
-        if (oldDoc === null) {
-            oldDoc = {
-                __v: -1,
-                _id: newDoc._id,
-                author: newDoc.author,
-                updatedAt: newDoc.updatedAt,
-                body: {}
-            }
-        }
-        var auditTrail = {
-            parent_id: oldDoc._id,
-            updatedAt: newDoc.updatedAt,
-            author: newDoc.author,
-            __v: oldDoc.__v + 1,
-            body: {
-                old_version: oldDoc.__v,
-                old_author: oldDoc.author,
-                old_date: oldDoc.updatedAt,
-                patch: jsonpatch.compare(oldDoc.body, newDoc.body),
-            },
-        };
-        //todo: replace bulkWrite callback with async insert for better error handling
-        if (auditTrail.body.patch.length > 0) {
-            model.bulkWrite([{
-                insertOne: {
-                    document: auditTrail
-                }
-            }], function (err) {
-                if (err) {
-                    console.log('Error: saving history ' + err);
-                } else {
-                }
-            });
-            return auditTrail;
-        } else {
-            return null;
-        }
-    }
+    module.addModelHistory = history.addModelHistory;
     var historyCollectionName = opts.historyCollectionName
         || (opts.conf && opts.conf.historyCollectionName)
         || (opts.schemaName + '_histories');
@@ -282,7 +244,21 @@ module.exports = function (Document, opts) {
                 });
             var oldDoc = updateResult || null;
             if (oldDoc) {
-                addHistory(oldDoc, newDoc);
+                var audit = addHistory(oldDoc, newDoc);
+                // Keep realtime editors of this same document in sync with an
+                // out-of-band HTTP save. Only for in-place updates: a rename
+                // returns a redirect that reloads the client anyway. The audit
+                // trail already carries the exact body diff and next version.
+                var rt = req.app && req.app.locals ? req.app.locals.realtime : null;
+                if (rt && audit && !renaming) {
+                    rt.notifyDocPatched(
+                        opts.schemaName,
+                        inputID,
+                        audit.body.patch,
+                        oldDoc.__v + 1,
+                        req.get('X-Realtime-Client-Id')
+                    );
+                }
             } else {
                 var insertedDoc = await Document.findOne(queryNewID);
                 addHistory(null, insertedDoc || newDoc);

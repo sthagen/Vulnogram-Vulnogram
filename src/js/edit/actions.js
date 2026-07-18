@@ -67,14 +67,20 @@ function save(e, onSuccess) {
         return;
     }
     infoMsg.textContent = "Saving...";
+    var saveHeaders = {
+        'Accept': 'application/json, text/plain, */*',
+        'Content-Type': 'application/json',
+        'CSRF-Token': csrfToken
+    };
+    // Identify this browser's realtime session so the server-side broadcast of
+    // this save skips our own socket (we resync our shadow directly below).
+    if (window.realtimeEnabled && typeof realtimeClientId === 'string') {
+        saveHeaders['X-Realtime-Client-Id'] = realtimeClientId;
+    }
     fetch(postUrl ? postUrl : '', {
             method: 'POST',
             credentials: 'include',
-            headers: {
-                'Accept': 'application/json, text/plain, */*',
-                'Content-Type': 'application/json',
-                'CSRF-Token': csrfToken
-            },
+            headers: saveHeaders,
             redirect: 'error',
             body: JSON.stringify(j),
         })
@@ -99,6 +105,13 @@ function save(e, onSuccess) {
                 if (draftsCache && draftsCache.remove) {
                     draftsCache.cancelSave();
                     draftsCache.remove(getDocID());
+                }
+                // This HTTP save bumped the persisted __v out from under our
+                // realtime shadow. Rejoin to adopt the new version so the next
+                // live edit doesn't trip a spurious VERSION_MISMATCH.
+                if (window.realtimeEnabled && typeof realtimeJoinIfReady === 'function') {
+                    realtimeState.joined = false;
+                    realtimeJoinIfReady();
                 }
                 getChanges(getDocID());
                 if (onSuccess)

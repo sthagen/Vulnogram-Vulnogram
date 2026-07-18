@@ -224,12 +224,13 @@ async function bootstrap() {
     const realtimeEnabled = !conf.realtime || conf.realtime.enabled !== false;
     const server = conf.httpsOptions ? https.createServer(conf.httpsOptions, app) : http.createServer(app);
 
+    app.locals.realtime = null;
     if (realtimeEnabled) {
         const { Server } = require('socket.io');
         const io = new Server(server, {
             maxHttpBufferSize: conf.realtime && conf.realtime.maxPatchBytes ? conf.realtime.maxPatchBytes * 2 : 1e6
         });
-        require('./lib/realtime')(io, {
+        app.locals.realtime = require('./lib/realtime')(io, {
             sessionMiddleware: sessionMiddleware,
             passport: passport,
             conf: conf,

@@ -174,6 +174,13 @@ mixin hyperVal(obj, name)
                                 else
                                     - cls = (cls ? cls + ' ' : '')+ value
                             span(class=cls title=value onclick=onclick)=value
+                    if fields[name].extLink && obj && obj[fields[name].extLink.from]
+                        //- extLink: {from, icon, title} — append an icon-only anchor next to
+                        //- the cell value, href taken raw (no encoding) from another projected
+                        //- field, e.g. a stored external URL. The source facet may be
+                        //- hideColumn; routes/doc.js keeps extLink sources in the projection.
+                        = ' '
+                        a(class='vgi-' + (fields[name].extLink.icon || 'ext'), href=obj[fields[name].extLink.from], target='_blank', rel='noopener', title=fields[name].extLink.title)
                 else
                     =value
 
