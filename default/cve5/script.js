@@ -421,8 +421,9 @@ async function autoText(event) {
         text = text.trim().replaceAll(/\s+/g, ' ');
         hE = await docEditor.getEditor('root.containers.cna.descriptions.0.supportingMedia.0.value');
 
-        // Capitolize sentances.
-        var rg = /(^\w{1}|\.\s*\w{1})/gi;
+        // Capitalize sentences: only after a period followed by whitespace,
+        // so file names like index.php keep their case.
+        var rg = /(^\w|\.\s+\w)/g;
         text = text.replace(rg, function (toReplace) {
             return toReplace.toUpperCase();
         });
