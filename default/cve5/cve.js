@@ -45,9 +45,11 @@
             return this._middleware.setCredentials({ user, org, key, rememberMe });
         }
 
-        logout() {
+        logout(silent) {
             //console.log("Called logout");
-            return this._middleware.destroy();
+            // silent: discard credentials without broadcasting a logout to
+            // other tabs (used when cleaning up after a failed login).
+            return this._middleware.destroy(silent);
         }
 
         getSession() {
@@ -308,7 +310,7 @@
             return this.send({ type: 'getSession' });
         }
 
-        destroy() {
+        destroy(silent) {
             let unregisterCurrent = () => {
                 let reg = this.registration;
                 if (!reg) {
@@ -324,8 +326,9 @@
             };
 
             // Ensure destroy reaches the worker before unregistration.
-            // destroySession() in the SW broadcasts the logout event.
-            return this.send({type: 'destroy'})
+            // destroySession() in the SW broadcasts the logout event unless
+            // `silent` asks for a quiet credential cleanup.
+            return this.send({type: 'destroy', silent: !!silent})
                 .catch(() => false)
                 .then(() => unregisterCurrent())
                 .then(() => true)

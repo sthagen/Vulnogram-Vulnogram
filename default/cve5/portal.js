@@ -107,6 +107,12 @@ function getClientPortalUrl() {
 }
 
 function portalBasePath() {
+    // Standalone (solo) builds host assets relative to the page's directory
+    // (e.g. vulnogram.org/cve -> /static/), not under a section mount, so
+    // resolve against the page like a "./" URL would.
+    if (typeof soloMode !== 'undefined' && soloMode) {
+        return window.location.pathname.replace(/[^\/]*$/, '');
+    }
     var name = (typeof schemaName === 'string' && schemaName) ? schemaName : '';
     if (!name && document.body && typeof document.body.className === 'string') {
         name = document.body.className.trim().split(/\s+/)[0];
@@ -458,10 +464,21 @@ function listenforLogins() {
 function listenforLogouts() {
     logoutChannel.onmessage = function (a) {
         clearPortalSessionCache();
+        // The payload of a BroadcastChannel message is in .data (a is a
+        // MessageEvent; a.message is always undefined).
+        var data = a && a.data ? a.data : {};
+        var loginErr = document.getElementById('loginErr');
+        if (loginErr) {
+            // The login form is on screen (possibly showing an error from a
+            // just-failed attempt): keep the dialog open, and only fill in the
+            // broadcast message if nothing more specific is displayed.
+            if (data.message && !loginErr.innerText) {
+                loginErr.innerText = data.message;
+            }
+            return;
+        }
         setPortalSidebarState(false);
-        if (document.getElementById('loginErr')) {
-            document.getElementById("loginErr").innerText = a.message ? a.message : '';
-        } else if (document.getElementById('port')) {
+        if (document.getElementById('port')) {
             document.getElementById('port').innerHTML = '';
         }
     }
@@ -508,9 +525,37 @@ async function portalLogin(elem, credForm) {
             credForm.key.value,
             credForm.rememberMe.checked);
 
-
-        var orgInfo = await csClient.getOrgInfo();
-        var userInfo = await csClient.getOrgUser(credForm.user.value);
+        // login() only stores the credentials in the service worker; these are
+        // the first calls that actually present them to CVE Services. Treat a
+        // rejection here as a failed login: discard the stored credentials
+        // QUIETLY (a broadcast logout would close this very dialog) and keep
+        // the form open with a specific error.
+        var orgInfo, userInfo;
+        try {
+            orgInfo = await csClient.getOrgInfo();
+            userInfo = await csClient.getOrgUser(credForm.user.value);
+        } catch (verifyErr) {
+            var reason = verifyErr && verifyErr.error ? verifyErr.error : null;
+            if (reason == 'UNAUTHORIZED' || reason == 'NO_SESSION') {
+                try {
+                    await csClient.logout(true);
+                } catch (cleanupErr) {
+                }
+                clearPortalSessionCache();
+                document.getElementById("loginErr").innerText =
+                    'Login failed: CVE Services rejected the credentials for "' +
+                    credForm.org.value + ' / ' + credForm.user.value +
+                    '" on the ' + portalType + ' portal.';
+                if (credForm.key && typeof credForm.key.focus === 'function') {
+                    credForm.key.focus();
+                    if (typeof credForm.key.select === 'function') {
+                        credForm.key.select();
+                    }
+                }
+                return false;
+            }
+            throw verifyErr;
+        }
 
         csCache.user = credForm.user.value;
         csCache.org = credForm.org.value;

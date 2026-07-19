@@ -1188,7 +1188,7 @@
           "properties": {
             "engine": {
               "type": "string",
-              "default": "Vulnogram 1.0.3"
+              "default": "Vulnogram 1.0.4"
             }
           },
           "options": {
@@ -1256,7 +1256,7 @@
           "properties": {
             "engine": {
               "type": "string",
-              "default": "Vulnogram 1.0.3"
+              "default": "Vulnogram 1.0.4"
             }
           },
           "options": {
