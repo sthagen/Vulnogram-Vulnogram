@@ -1,65 +1,89 @@
 {
-  "generatedAt": "2026-03-17T21:33:29Z",
+  "generatedAt": "2026-07-19T17:12:04Z",
   "screenshots": {
     "01-access-editor": {
       "file": "01-access-editor.png",
-      "hash": "e39963874d441763df02d0e368952e741b42fb058a8f09097fae78b6be620b30",
+      "hash": "4a247425106d59d3077502ba1ab3e6557751b88ca9d061f83beb2782bbeffe92",
       "exists": true,
-      "updatedAt": "2026-02-27T04:56:19Z"
+      "updatedAt": "2026-07-19T16:56:05Z"
     },
     "02-portal-login": {
       "file": "02-portal-login.png",
-      "hash": "bb4b5f936433dbcdbdb6700ef1d9f1c4d0450767a4ea2aa0079dcb83653e5ce8",
+      "hash": "39a13b7077f33802d12684905af5bce11cda27ddf6e8c58174e138213d0594d5",
       "exists": true,
-      "updatedAt": "2026-02-26T22:15:12Z"
+      "updatedAt": "2026-07-19T16:56:05Z"
     },
     "03-reserve-cve-ids": {
       "file": "03-reserve-cve-ids.png",
-      "hash": "c3f39fe9b6f8e3ed279b4f7ba1ac46ad605d9a6a92cfd0cc128d7b1ffedd8bf2",
+      "hash": "69d7cd3924d64dd14786a42acdc93f6c034dba23e834661d029234b4879b8922",
       "exists": true,
-      "updatedAt": "2026-03-09T06:16:58Z"
+      "updatedAt": "2026-07-19T16:56:05Z"
     },
     "04-enter-cve-details": {
       "file": "04-enter-cve-details.png",
-      "hash": "b92e68cd5139a9d66f1ee80133be72e9c75b9a1adb81b0e55342a4f5ddca9ac6",
+      "hash": "4dd1a29f7c974c5d0210a5c92ccfd25a544a48e5c89bf767d25295204b8c09dd",
       "exists": true,
-      "updatedAt": "2026-03-09T06:16:58Z"
+      "updatedAt": "2026-07-19T16:56:05Z"
     },
     "04b-settings-dialog": {
       "file": "04b-settings-dialog.png",
-      "hash": "622675f22c40da6c494e5ac21297cd8b7d1b07a30a7cc8cb08886ed442c07a24",
+      "hash": "528a8c9dc1ef9d9f88da923b350fc146aee46fa72fea7efb1c15e071949b69b8",
       "exists": true,
-      "updatedAt": "2026-03-17T21:27:19Z"
+      "updatedAt": "2026-07-19T16:56:05Z"
     },
     "05-publish-cve": {
       "file": "05-publish-cve.png",
-      "hash": "993656016a550f00c9080b77cc0417eb95b99cbc5939cd325a848cb517c07271",
+      "hash": "292d4504b45b813a8677c558c44a9d039c0b0dde6c26299915ff29fa1480a6c6",
       "exists": true,
-      "updatedAt": "2026-03-09T06:16:58Z"
+      "updatedAt": "2026-07-19T16:56:05Z"
     },
     "05b-publish-multiple-cve": {
       "file": "05b-publish-multiple-cve.png",
-      "hash": "90774ae37a88e2b6172f6972138c4660fabf57ea8e4f74a73a723e5fcdedea89",
+      "hash": "665471c0e70c33e592a63c6c2ed284bb28658d54eb1de39d63ba2ea077b259a3",
       "exists": true,
-      "updatedAt": "2026-03-17T21:33:29Z"
+      "updatedAt": "2026-07-19T16:56:05Z"
     },
     "06-admin-user-management": {
       "file": "06-admin-user-management.png",
-      "hash": "cd805edf8934872700db25f2a547eef322aeb12ff99c5527888ee917fbfdcafe",
+      "hash": "29f8d3fe9a77bb0fb59fa5de56bfc1fbd3aef57651bb202c6585650cf0d79540",
       "exists": true,
-      "updatedAt": "2026-03-09T06:16:58Z"
+      "updatedAt": "2026-07-19T16:56:05Z"
     },
     "07a-reject-unused-cves": {
       "file": "07a-reject-unused-cves.png",
-      "hash": "9afb1a4136082442c1b6f01ee8182239399e739c72849d4ebf54c50fd8ce63c5",
+      "hash": "d3c7b011106852bf2f2de8b90de48955f53fcb2be6fd3bde5929b1e96984c585",
       "exists": true,
-      "updatedAt": "2026-03-09T06:16:58Z"
+      "updatedAt": "2026-07-19T16:56:05Z"
     },
     "07b-reject-published-cve": {
       "file": "07b-reject-published-cve.png",
-      "hash": "f0652676cdcd5e63fa80cfa4d352d9a655d3e4350759983dfbd3a5f2edd25568",
+      "hash": "8fa10f47ac732f1b28db92b719d6bb371896c076ed74e405323fc2aa5a760d26",
       "exists": true,
-      "updatedAt": "2026-03-09T06:16:58Z"
+      "updatedAt": "2026-07-19T16:56:05Z"
+    },
+    "07c-reject-multiple-select": {
+      "file": "07c-reject-multiple-select.png",
+      "hash": "96392386e6c297d52f5acd5c4b54963658094732bdb5abbea6c91d80bcd9607d",
+      "exists": true,
+      "updatedAt": "2026-07-19T17:12:04Z"
+    },
+    "07d-bulk-reject-dialog": {
+      "file": "07d-bulk-reject-dialog.png",
+      "hash": "99890aee742c390a795b1ceb21248a09b2a7fab8b9398e2a50775462935e5827",
+      "exists": true,
+      "updatedAt": "2026-07-19T17:12:04Z"
+    },
+    "08a-transfer-cve-controls": {
+      "file": "08a-transfer-cve-controls.png",
+      "hash": "3f77393b72b12046e9bc003c2d4a774aeef1289e965c76ca22c320306516877d",
+      "exists": true,
+      "updatedAt": "2026-07-19T17:11:08Z"
+    },
+    "08b-transfer-cve-dialog": {
+      "file": "08b-transfer-cve-dialog.png",
+      "hash": "916636d77af5715c74ed50741f163e16feb351312cd1f6b32d93c84745ca0184",
+      "exists": true,
+      "updatedAt": "2026-07-19T17:11:08Z"
     }
   }
 }

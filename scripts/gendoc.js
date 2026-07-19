@@ -680,6 +680,27 @@ async function applyAction(page, action, context) {
       );
       break;
     }
+    case 'seedCnaList': {
+      const entries = Array.isArray(action.entries) ? action.entries : [];
+      if (entries.length === 0) {
+        throw new Error('seedCnaList action requires non-empty "entries"');
+      }
+      await page.evaluate((cnaEntries) => {
+        const list = cnaEntries
+          .filter((entry) => entry && entry.shortName)
+          .map((entry) => ({
+            shortName: String(entry.shortName),
+            n: String(entry.n || entry.shortName)
+          }));
+        if (list.length === 0) {
+          throw new Error('seedCnaList received no valid entries');
+        }
+        // portal.js declares `var _cnaListCache` at top level of a classic
+        // script, so this window property is the same binding cveLoadCnaList reads.
+        window._cnaListCache = list;
+      }, entries);
+      break;
+    }
     case 'openDraftPublishDialog': {
       await page.evaluate(async () => {
         if (typeof window.cveOpenDraftPublishDialog === 'function') {
@@ -1510,6 +1531,10 @@ function buildMarkdown(manifest, screenshotStatuses, generatedAt) {
     { label: 'Users', icon: 'cog' },
     { label: 'Reject this CVE ID', icon: 'del' },
     { label: 'Reject this ID', icon: 'no' },
+    { label: 'Reject All', icon: 'del' },
+    { label: 'Reject', icon: 'del' },
+    { label: 'Transfer this CVE ID', icon: 'forward' },
+    { label: 'Transfer', icon: 'forward' },
     { label: 'Manage', icon: 'export' }
   ];
 
