@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-19T17:12:04Z",
+  "generatedAt": "2026-07-19T17:33:57Z",
   "screenshots": {
     "01-access-editor": {
       "file": "01-access-editor.png",
@@ -27,9 +27,9 @@
     },
     "04b-settings-dialog": {
       "file": "04b-settings-dialog.png",
-      "hash": "528a8c9dc1ef9d9f88da923b350fc146aee46fa72fea7efb1c15e071949b69b8",
+      "hash": "241054952a797715ce2b3e7aafd79a57c6573f92f98b11957f35713694356e13",
       "exists": true,
-      "updatedAt": "2026-07-19T16:56:05Z"
+      "updatedAt": "2026-07-19T17:32:19Z"
     },
     "05-publish-cve": {
       "file": "05-publish-cve.png",
@@ -39,9 +39,9 @@
     },
     "05b-publish-multiple-cve": {
       "file": "05b-publish-multiple-cve.png",
-      "hash": "665471c0e70c33e592a63c6c2ed284bb28658d54eb1de39d63ba2ea077b259a3",
+      "hash": "92902c80a54e0002a6e2d7ed59470c19ccc5f45aad58fdde8dfca9c5e88b7fa1",
       "exists": true,
-      "updatedAt": "2026-07-19T16:56:05Z"
+      "updatedAt": "2026-07-19T17:33:57Z"
     },
     "06-admin-user-management": {
       "file": "06-admin-user-management.png",
@@ -81,9 +81,9 @@
     },
     "08b-transfer-cve-dialog": {
       "file": "08b-transfer-cve-dialog.png",
-      "hash": "916636d77af5715c74ed50741f163e16feb351312cd1f6b32d93c84745ca0184",
+      "hash": "bb49a118406f34378812fd093ed9cf1b3d3fe99fd72e3842aeeb79e65962e826",
       "exists": true,
-      "updatedAt": "2026-07-19T17:11:08Z"
+      "updatedAt": "2026-07-19T17:32:19Z"
     }
   }
 }
