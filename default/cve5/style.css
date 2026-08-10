@@ -217,6 +217,28 @@ button.json-editor-btn-delete {
   overflow: auto;
 }
 
+/* Under-construction banner: yellow/black hazard stripes on the dialog
+   header whenever the connected/selected CVE portal is not production. */
+#cvePortalDialog header[data-portal-type]:not([data-portal-type="production"]) {
+  background: repeating-linear-gradient(
+    -45deg,
+    #f5c40099 0,
+    #f5c40099 14px,
+    #1c1c1c99 14px,
+    #1c1c1c99 28px
+  );
+}
+
+#cvePortalDialog header[data-portal-type]:not([data-portal-type="production"]) .lbl,
+#cvePortalDialog header[data-portal-type]:not([data-portal-type="production"]) .rbtn {
+  background-color: var(--wht);
+}
+
+#cvePortalDialog header .lbl[data-portal-type]:not([data-portal-type="production"])::after {
+  content: " — " attr(data-portal-type);
+  text-transform: uppercase;
+}
+
 #cvePortalDialog::backdrop {
   backdrop-filter: blur(1px);
   background-color: rgba(0, 0, 0, 0.18);

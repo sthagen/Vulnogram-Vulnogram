@@ -597,6 +597,16 @@ function copyToClipboard(text){
     return false;
 }
 
+/* Schema link action shared by every section that scores CVSS v4 (cve5, cvss4),
+   so it lives here beside cvssjs and copyToClipboard rather than in one section.
+   Section-specific actions belong in default/<section>/script.js.
+   Reading the vector on click, rather than baking it into an href at build time,
+   keeps it current when metrics change after the link is created. */
+window.vgLinkActions = window.vgLinkActions || {};
+window.vgLinkActions.copyCvssVector = function (ctx) {
+    copyToClipboard(cvssjs.vector4(ctx.editor.getWatchedFieldValues() || {}));
+};
+
 /**
  * SimpleHtml Editor
  * A minimal, modular, secure rich text editor.
@@ -3061,6 +3071,20 @@ JSONEditor.AbstractEditor.prototype.showStar = function () {
     return this.isRequired() && !(this.schema.readOnly || this.schema.readonly || this.schema.template)
 }
 
+/* Registry of named click handlers for schema links. A link declares
+   "action": "<name>" instead of a javascript: href or an inline onclick, so the
+   button still works under a CSP that lacks 'unsafe-inline'. Only registered
+   names can be invoked, so a schema - including a remote one - cannot name
+   arbitrary code.
+
+   Handlers belong to whichever section owns them and are registered from
+   default/<section>/script.js; nothing section-specific goes here. Section
+   scripts are inlined ahead of jsoneditor.min.js, so this is a plain global
+   rather than a JSONEditor property: either side may run first, so always
+   extend the object instead of replacing it.
+   A handler is called with {editor, element, event}. */
+window.vgLinkActions = window.vgLinkActions || {};
+
 JSONEditor.AbstractEditor.prototype.addLinks = function () {
     /* Add links */
     if (!this.no_link_holder) {
@@ -3103,21 +3127,28 @@ JSONEditor.AbstractEditor.prototype.addLinks = function () {
             }
             if(link.target === false) {
                 h.removeAttribute('target')
-            } else {
+            } else if (link.target !== undefined) {
+                /* Only override when the schema asks for a target. Without this
+                   guard an absent target set the literal string "undefined",
+                   clobbering the target="_blank" that getLink() already applied. */
                 h.setAttribute('target', link.target)
             }
-            if(link.onclick) {
-                var onClickHandler = link.onclick;
-                if (typeof onClickHandler === 'string') {
-                    try {
-                        var onClickTemplate = this.jsoneditor.compileTemplate(onClickHandler, this.template_engine);
-                        this.refreshWatchedFieldValues();
-                        onClickHandler = onClickTemplate(this.getWatchedFieldValues() || {});
-                    } catch (e) {
-                        onClickHandler = link.onclick;
+            /* Schema "onclick" is intentionally not supported: it would let a
+               schema (including a remote one) inject arbitrary code, and the
+               attribute is dead under CSP anyway. Use "action" instead. */
+            if(link.action) {
+                /* let, not var: each iteration needs its own binding for the closure */
+                let actionName = link.action;
+                let actionEditor = this;
+                h.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    var handler = window.vgLinkActions[actionName];
+                    if (typeof handler !== 'function') {
+                        console.error('Unregistered schema link action: ' + actionName);
+                        return;
                     }
-                }
-                h.setAttribute('onclick', onClickHandler);
+                    handler({ editor: actionEditor, element: this, event: event });
+                });
             }
             if(link.place == "container" && this.container) {
                 this.container.appendChild(h);
@@ -4917,25 +4948,5 @@ function downloadHtml(title, element, link) {
     link.download = file.name;
 }
 
-function showAlert(msg, smallmsg, timer, showCancel) {
-    errMsg.textContent="";
-    infoMsg.textContent="";
-    if (showCancel) {
-        document.getElementById("alertCancel").style.display = "inline-block";
-    } else {
-        var temp1 = document.getElementById("alertOk");
-        temp1.setAttribute("onclick", "document.getElementById('alertDialog').close();");
-        document.getElementById("alertCancel").style.display = "none";
-    }
-    document.getElementById("alertMessage").innerText = msg;
-    if (smallmsg)
-        document.getElementById("smallAlert").innerText = smallmsg;
-    else
-        document.getElementById("smallAlert").innerText = " ";
-    if (!document.getElementById("alertDialog").hasAttribute("open"))
-        document.getElementById("alertDialog").showModal();
-    if (timer)
-        setTimeout(function () {
-            document.getElementById("alertDialog").close();
-        }, timer);
-}
+// showAlert is provided globally by public/js/vg-alert.js (loaded on every
+// page from views/head.pug) so non-editor pages can use it too.

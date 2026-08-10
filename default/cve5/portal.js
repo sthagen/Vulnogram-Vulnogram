@@ -87,11 +87,6 @@ if (document.readyState === 'loading') {
     initPortalNavConnectionState();
 }
 
-function isPortalAuthError(e) {
-    const err = e && e.error ? e.error : null;
-    return err == 'NO_SESSION' || err == 'UNAUTHORIZED';
-}
-
 function normalizePortalUrl(url) {
     if (!url) {
         return defaultPortalUrl;
@@ -288,6 +283,25 @@ function portalFocusEditor() {
     }
 }
 
+// Reflect the portal environment on the dialog header so CSS can paint an
+// under-construction (yellow/black striped) banner for non-production portals.
+function updateCvePortalDialogTheme(typeOverride) {
+    var portalDialog = document.getElementById('cvePortalDialog');
+    if (!portalDialog) {
+        return;
+    }
+    var portalType = typeOverride || (csCache && csCache.portalType) || 'production';
+    portalType = String(portalType).trim().toLowerCase();
+    var header = portalDialog.querySelector('header');
+    if (header) {
+        header.setAttribute('data-portal-type', portalType);
+        var label = header.querySelector('.lbl');
+        if (label) {
+            label.setAttribute('data-portal-type', portalType);
+        }
+    }
+}
+
 function getStoredPortalSettings() {
     let portalType = window.localStorage.getItem('portalType');
     let portalUrl = window.localStorage.getItem('portalUrl');
@@ -387,6 +401,17 @@ function showPortalLogin(message) {
         prevPortal: csCache.portalType,
         prevOrg: window.localStorage.getItem('shortName')
     })
+    var portalSelect = document.getElementById('cpPortal');
+    if (portalSelect) {
+        var reflectSelection = function () {
+            var opt = portalSelect.options[portalSelect.selectedIndex];
+            updateCvePortalDialogTheme(opt ? opt.text : null);
+        };
+        portalSelect.addEventListener('change', reflectSelection);
+        reflectSelection();
+    } else {
+        updateCvePortalDialogTheme();
+    }
 }
 
 async function portalLogout(message) {
@@ -430,6 +455,7 @@ async function showPortalView(orgInfo, userInfo) {
             userInfo: userInfo,
             org: orgInfo
         });
+        updateCvePortalDialogTheme();
         setPortalNavConnectionState(true);
         var button1 = document.getElementById('post1');
         if(button1) {
@@ -824,6 +850,19 @@ async function cveRenderList(l, refreshEditor) {
     if (l && document.getElementById('cveList')) {
         var canInlineLoad = !!(document.getElementById('docEditor') && typeof loadJSON === 'function' && typeof mainTabGroup !== 'undefined');
         var docPathBase = portalBasePath();
+        var listEl = document.getElementById('cveList');
+        /* Delegated on the container (which survives the innerHTML rerenders
+           below) instead of inline onclick attributes, which CSP blocks. */
+        if (!listEl.dataset.cveLoadDelegated) {
+            listEl.dataset.cveLoadDelegated = '1';
+            listEl.addEventListener('click', function (event) {
+                var a = event.target.closest('a[data-cve-id]');
+                if (a && listEl.contains(a)) {
+                    event.preventDefault();
+                    cveLoad(a.dataset.cveId);
+                }
+            });
+        }
         document.getElementById('cveList').innerHTML = cveRender({
             ctemplate: 'listIds',
             cveIds: l,
@@ -1134,12 +1173,14 @@ async function cveLoad(cveId) {
         return skeleton;
     } catch (e2) {
         if (e2 == '404') {
-            showAlert('CVE Not found!');
+            cveAlert('CVE Not found!');
         } else if (e2.error == 'NO_SESSION' || e2.error == 'UNAUTHORIZED') {
             throw e2;
         } else {
-            errMsg.textContent = "Failed to load valid CVE Record";
-            infoMsg.textContent = "";
+            var errMsgElem = document.getElementById('errMsg');
+            if (errMsgElem) errMsgElem.textContent = "Failed to load valid CVE Record";
+            var infoMsgElem = document.getElementById('infoMsg');
+            if (infoMsgElem) infoMsgElem.textContent = "";
         }
     }
     return null;

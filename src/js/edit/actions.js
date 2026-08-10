@@ -224,28 +224,8 @@ function downloadHtml(title, element, link) {
     link.download = file.name;
 }
 
-function showAlert(msg, smallmsg, timer, showCancel) {
-    errMsg.textContent="";
-    infoMsg.textContent="";
-    if (showCancel) {
-        document.getElementById("alertCancel").style.display = "inline-block";
-    } else {
-        var temp1 = document.getElementById("alertOk");
-        temp1.setAttribute("onclick", "document.getElementById('alertDialog').close();");
-        document.getElementById("alertCancel").style.display = "none";
-    }
-    document.getElementById("alertMessage").innerText = msg;
-    if (smallmsg)
-        document.getElementById("smallAlert").innerText = smallmsg;
-    else
-        document.getElementById("smallAlert").innerText = " ";
-    if (!document.getElementById("alertDialog").hasAttribute("open"))
-        document.getElementById("alertDialog").showModal();
-    if (timer)
-        setTimeout(function () {
-            document.getElementById("alertDialog").close();
-        }, timer);
-}
+// showAlert is provided globally by public/js/vg-alert.js (loaded on every
+// page from views/head.pug) so non-editor pages can use it too.
 
 export {
     loadJSON,
@@ -256,6 +236,5 @@ export {
     loadFile,
     downloadFile,
     downloadText,
-    downloadHtml,
-    showAlert
+    downloadHtml
 };

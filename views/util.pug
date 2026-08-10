@@ -66,13 +66,6 @@ mixin hyperscopes(obj, name)
                     | 
                     = s['Resolution-Reason']
 
-mixin iconCVSS(obj,name)
-    if obj
-        - var vect=["accessVector","accessComplexity", "authentication","attackVector","attackComplexity","privilegesRequired","userInteraction","scope","confidentialityImpact","integrityImpact","availabilityImpact"]
-        each v in vect
-            if obj[v]
-                b.icn.lbl(class=obj[v],for=v,title=v + ': ' + obj[v])=obj[v][0]
-            
 mixin hyperCVSS(obj,name)
     - var value = obj[name]
     - var s = parseFloat(value)
@@ -180,7 +173,7 @@ mixin hyperVal(obj, name)
                         //- field, e.g. a stored external URL. The source facet may be
                         //- hideColumn; routes/doc.js keeps extLink sources in the projection.
                         = ' '
-                        a(class='vgi-' + (fields[name].extLink.icon || 'ext'), href=obj[fields[name].extLink.from], target='_blank', rel='noopener', title=fields[name].extLink.title)
+                        +safeLink(obj[fields[name].extLink.from])(class='vgi-' + (fields[name].extLink.icon || 'ext'), target='_blank', rel='noopener', title=fields[name].extLink.title)
                 else
                     =value
 
@@ -241,5 +234,9 @@ mixin tablesort
         }
         
 mixin asis(x)
-    - var sanitized = typeof sanitizeRichHtml === 'function' ? sanitizeRichHtml(x) : (x || '');
-    |!{sanitized}
+    if typeof sanitizeRichHtml === 'function'
+        - var sanitized = sanitizeRichHtml(x);
+        |!{sanitized}
+    else
+        //- No sanitizer in scope: emit as escaped text rather than raw markup.
+        = x

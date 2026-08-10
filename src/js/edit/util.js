@@ -587,3 +587,13 @@ function copyToClipboard(text){
     });
     return false;
 }
+
+/* Schema link action shared by every section that scores CVSS v4 (cve5, cvss4),
+   so it lives here beside cvssjs and copyToClipboard rather than in one section.
+   Section-specific actions belong in default/<section>/script.js.
+   Reading the vector on click, rather than baking it into an href at build time,
+   keeps it current when metrics change after the link is created. */
+window.vgLinkActions = window.vgLinkActions || {};
+window.vgLinkActions.copyCvssVector = function (ctx) {
+    copyToClipboard(cvssjs.vector4(ctx.editor.getWatchedFieldValues() || {}));
+};

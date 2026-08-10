@@ -261,7 +261,8 @@ mixin listIds
                         td
                             if editable
                                 if canInlineLoad
-                                    a(class=stateIcons[c.state]?stateIcons[c.state]:'',href="javascript:cveLoad('"+c.cve_id+"')", title='Load ' + c.state + ' ' + c.cve_id + ' to edit')
+                                    //- no inline onclick (CSP): portal.js delegates clicks on [data-cve-id] to cveLoad
+                                    a(class=stateIcons[c.state]?stateIcons[c.state]:'',href="#",data-cve-id=c.cve_id, title='Load ' + c.state + ' ' + c.cve_id + ' to edit')
                                         =c.cve_id
                                 else
                                     a(class=stateIcons[c.state]?stateIcons[c.state]:'',href=docBase + encodeURIComponent(c.cve_id), title='Open ' + c.cve_id)

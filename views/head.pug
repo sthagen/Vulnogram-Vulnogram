@@ -26,5 +26,7 @@ else
       | var iconClass = !{JSON.stringify((schemaName && confOpts && confOpts[schemaName] && confOpts[schemaName].conf && confOpts[schemaName].conf.class) || '')};
       include favicon.js
 
+script(src=conf.basedir + 'js/vg-alert.js')
+
 if (opts && opts.style)
     style !{opts.style}
