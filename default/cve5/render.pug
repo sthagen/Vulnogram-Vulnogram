@@ -4,8 +4,8 @@ include ../../views/util
 mixin spara(l, hypertext)
     if l
         each d in l
-            if d.supportingMedia && d.supportingMedia.length > 0 && d.supportingMedia[0].type == 'text/html'
-                - var supportingHtml = typeof sanitizeRichHtml === 'function' ? sanitizeRichHtml(d.supportingMedia[0].value) : (d.supportingMedia[0].value || '');
+            if d.supportingMedia && d.supportingMedia.length > 0 && d.supportingMedia[0].type == 'text/html' && typeof sanitizeRichHtml === 'function'
+                - var supportingHtml = sanitizeRichHtml(d.supportingMedia[0].value);
                 p !{supportingHtml}
             else if d.value
                 +para(d.value)
@@ -180,9 +180,9 @@ mixin prodDetails(p)
     if p[3]
         br
         if p[3].collectionURL
-            a.vgi-package(href=p[3].collectionURL) package repo
+            +safeLink(p[3].collectionURL)(class="vgi-package") package repo
         if p[3].repo
-            a.vgi-ext(href=p[3].repo) source repo
+            +safeLink(p[3].repo)(class="vgi-ext") source repo
         if p[3].programFiles
             each f, i in p[3].programFiles
                 span.vgi-text= f
@@ -247,33 +247,17 @@ mixin refList(references)
     each r in references
         if r.url
             div
-                - var u ; try { u = (new URL(r.url)) } catch(e){};
+                //- reset each iteration: var is hoisted across the loop, so a
+                //- rejected URL would otherwise reuse the previous valid one
+                - var u = null; try { var pu = (new URL(r.url)); if (pu.protocol === 'http:' || pu.protocol === 'https:' || pu.protocol === 'ftp:' || pu.protocol === 'ftps:') u = pu; } catch(e){};
                 if u
                     img(width=18,height=18,class="lbl",src="https://www.google.com/s2/favicons?sz=32&domain_url="+u.protocol + '//'+ encodeURIComponent(u.hostname))
-                    a(href=r.url)=(r.name && (r.name != r.url)) ?  u.hostname + " : " + r.name : u.hostname + u.pathname + u.search
+                    a(href=u.href)=(r.name && (r.name != r.url)) ?  u.hostname + " : " + r.name : u.hostname + u.pathname + u.search
                 else
                     =r.url
                 if r.tags && r.tags.length > 0
                     |  
                     =r.tags.join(" ")
-
-mixin errors(con)
-    if con.x_ValidationErrors
-        each x in con.x_ValidationErrors
-            p.sec.rnd.pad
-                b.vgi-alert Validation Error : 
-                |   
-                span=x
-
-mixin warnings(con)
-    if con.x_ConverterErrors
-        each x, i in con.x_ConverterErrors
-            p.sec.rnd.pad
-                b.vgi-alert Conversion Warning :  
-                |  
-                b=x.error
-                | 
-                span=x.message
 
 mixin containerIdentity(con, cve)
     - var cList = con && con.shortName ? con.shortName : (cve && cve.cveMetadata ? cve.cveMetadata.assignerShortName : false);
@@ -293,7 +277,7 @@ mixin containerIdentity(con, cve)
                         if cnaName
                             a.bld(href=cList ? '?CNA:'+quote+cList+quote : false)=cnaName
                         if con.url
-                            a.vgi-globe(href=con.url)
+                            +safeLink(con.url)(class="vgi-globe")
                 +renderDate(publicDate)
                 if (con.dateUpdated || publishDate) && con.dateUpdated != publishDate
                     |  (updated 
@@ -586,46 +570,6 @@ mixin para(t, hypertext)
                     else
                         p=line
 
-mixin mpara(l, hypertext)
-    if l
-        each d in l
-            if d.value
-                +para(d.value, hypertext)
-
-mixin aggpara(l)
-    if l
-        ul
-            each k, v in l
-                li
-                    b=k.join(', ')
-                    p
-                        +para(v)
-
-mixin spara(l, hypertext)
-    if l
-        each d in l
-            if d.supportingMedia && d.supportingMedia.length > 0 && d.supportingMedia[0].type == 'text/html'
-                - var supportingHtml = typeof sanitizeRichHtml === 'function' ? sanitizeRichHtml(d.supportingMedia[0].value) : (d.supportingMedia[0].value || '');
-                p !{supportingHtml}
-            else if d.value
-                +para(d.value)
-
-mixin linklist(l, url)
-    each v, i in l
-        if(i < l.length-2)
-            if(url)
-                a(href=url+v)=v
-            else
-                = v
-            | , 
-        else
-            if(i == l.length - 1 && i > 0)
-                |  and 
-            if(url)
-                a(href=url+v)=v
-            else
-                =v
-
 mixin CVSS(value)
     = value && value.baseScore >= 0 ? value.baseScore.toFixed(1) : 'n/a'
     |  
@@ -697,15 +641,6 @@ mixin versionList(v)
             =x
             br
 
-mixin del_versionList(v)
-    if v
-        - var n = v.shift();
-        while n != undefined
-            = n
-            if v.length > 0
-                hr
-            - n = v.shift();
-
 block pageDef
     mixin page(d)
         style 
@@ -754,49 +689,3 @@ block pageDef
                 else
                     blockquote.bor.rnd.wht.pad
                         +container(con,cve)
-
-mixin mitre(cve)
-    h2 MITRE CVE entry preview
-    - var cna = cve.containers.cna;
-    #GeneratedTable
-        table(cellpadding=0,cellspacing=0,border=0)
-            tbody
-                tr
-                    th(colspan=2) CVE-ID
-                tr
-                    td(nowrap="nowrap")
-                        h2=cve.cveMetadata.cveId
-                    td.ltgreybackground
-                        .larger
-                            a Learn more at National Vulnerability Database (NVD)
-                        .smaller • Severity Rating • Fix Information • Vulnerable Software Versions • SCAP Mappings
-                tr
-                    th(colspan=2) Description
-                tr
-                    td(colspan=2)
-                        each d in cna.descriptions
-                            =d.value
-                            = ' '
-                tr
-                    th(colspan=2) References
-                tr
-                    td.note(colspan=2)
-                        b Note: 
-                        a References
-                        |  are provided for the convenience of the reader to help distinguish between vulnerabilities. The list is not intended to be complete.
-                tr
-                    td(colspan=2)
-                        ul
-                            each r in cna.references
-                                li
-                                    a(target="_blank",href=r.url)=r.url
-                tr
-                    th(colspan=2) Assigning CNA
-                tr
-                    td(colspan=2)=cve.cveMetadata.assignerShortName
-                tr
-                    th(colspan=2) Date Entry Created
-                tr
-                    td
-                        b YYYYMMDD
-                    td.ltgreybackground Disclaimer: The entry creation date may reflect when the CVE-ID was allocated or reserved, and does not necessarily indicate when this vulnerability was discovered, shared with the affected vendor, publicly disclosed, or updated in CVE.
