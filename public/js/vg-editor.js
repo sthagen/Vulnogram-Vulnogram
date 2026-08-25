@@ -602,10 +602,15 @@ function copyToClipboard(text){
    Section-specific actions belong in default/<section>/script.js.
    Reading the vector on click, rather than baking it into an href at build time,
    keeps it current when metrics change after the link is created. */
-window.vgLinkActions = window.vgLinkActions || {};
-window.vgLinkActions.copyCvssVector = function (ctx) {
-    copyToClipboard(cvssjs.vector4(ctx.editor.getWatchedFieldValues() || {}));
-};
+// util.js is required server-side by routes/doc.js and routes/onedoc.js, where
+// `window` is undefined, so guard the browser-only registration (mirrors the
+// `typeof module` guard above for module.exports).
+if (typeof window !== 'undefined') {
+    window.vgLinkActions = window.vgLinkActions || {};
+    window.vgLinkActions.copyCvssVector = function (ctx) {
+        copyToClipboard(cvssjs.vector4(ctx.editor.getWatchedFieldValues() || {}));
+    };
+}
 
 /**
  * SimpleHtml Editor
@@ -2153,23 +2158,63 @@ var realtimeState = {
     inflightPatch: null,
     inflightBase: null
 };
-var realtimeClientId = (function () {
-    var key = 'vulnogram-client-id';
-    try {
-        var existing = window.localStorage.getItem(key);
-        if (existing) {
-            return existing;
-        }
-        var fresh = 'client-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-        window.localStorage.setItem(key, fresh);
-        return fresh;
-    } catch (e) {
-        return 'client-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-    }
-})();
+// Must be unique per tab, so never persist it: localStorage is origin-wide
+// (and "Duplicate Tab" copies sessionStorage), which would give same-browser
+// tabs one shared id and make the doc:patched echo check below drop each
+// other's patches as self-echo. Reloads don't need a stable id — rejoin
+// refreshes the shadow, and the save header reads this live variable.
+var realtimeClientId = 'client-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
 
 function realtimeCloneDoc(doc) {
     return doc ? JSON.parse(JSON.stringify(doc)) : {};
+}
+
+// Mirror of the server guard (lib/realtime.js): refuse any patch that could
+// reach Object.prototype. window.jsonpatch.apply walks with a bare obj[key] and
+// assigns with a bare obj[key] = value, so a hostile or out-of-band patch would
+// otherwise pollute the editor page. Run this before every apply(); the server
+// screen only covers patches that transit its socket handler.
+function realtimeIsUnsafeKey(key) {
+    return key === '__proto__'
+        || key === 'prototype'
+        || key === 'constructor'
+        || Object.prototype.hasOwnProperty.call(Object.prototype, key);
+}
+
+function realtimePointerHasUnsafeKey(pointer) {
+    if (typeof pointer !== 'string') return false;
+    var segments = pointer.split('/');
+    for (var i = 0; i < segments.length; i++) {
+        var segment = segments[i].replace(/~1/g, '/').replace(/~0/g, '~');
+        if (realtimeIsUnsafeKey(segment)) return true;
+    }
+    return false;
+}
+
+function realtimeValueHasUnsafeKey(value) {
+    if (!value || typeof value !== 'object') return false;
+    if (Array.isArray(value)) {
+        for (var i = 0; i < value.length; i++) {
+            if (realtimeValueHasUnsafeKey(value[i])) return true;
+        }
+        return false;
+    }
+    var keys = Object.keys(value);
+    for (var j = 0; j < keys.length; j++) {
+        if (realtimeIsUnsafeKey(keys[j]) || realtimeValueHasUnsafeKey(value[keys[j]])) return true;
+    }
+    return false;
+}
+
+function realtimePatchIsUnsafe(patch) {
+    if (!Array.isArray(patch)) return true;
+    for (var i = 0; i < patch.length; i++) {
+        var op = patch[i];
+        if (!op || typeof op !== 'object') return true;
+        if (realtimePointerHasUnsafeKey(op.path) || realtimePointerHasUnsafeKey(op.from)) return true;
+        if (Object.prototype.hasOwnProperty.call(op, 'value') && realtimeValueHasUnsafeKey(op.value)) return true;
+    }
+    return false;
 }
 
 function realtimeSetStatus(connected, message) {
@@ -2285,6 +2330,12 @@ function realtimeMergeServerState(serverDoc, serverVersion, prevBase) {
     var localPatch = (prevBase && currentDoc) ? window.jsonpatch.compare(prevBase, currentDoc) : [];
     var target = realtimeCloneDoc(serverDoc);
     var haveLocal = !!(localPatch && localPatch.length);
+    if (haveLocal && realtimePatchIsUnsafe(localPatch)) {
+        // The local delta would reach Object.prototype; discard it and take the
+        // server copy rather than applying it.
+        target = realtimeCloneDoc(serverDoc);
+        haveLocal = false;
+    }
     if (haveLocal) {
         try {
             window.jsonpatch.apply(target, localPatch, true);
@@ -2359,6 +2410,13 @@ function realtimeSendPatch(patch) {
         var rejectedBase = realtimeState.inflightBase;
         realtimeState.inflightPatch = null;
         realtimeState.inflightBase = null;
+        if (res && res.reason === 'PATCH_INVALID') {
+            // Server refused the patch (e.g. it reached Object.prototype).
+            // Surface it and stop, rather than clearing "Saving..." never and
+            // re-sending the identical rejected patch on every later keystroke.
+            infoMsg.textContent = "Save error";
+            return;
+        }
         if (res && res.reason === 'VERSION_MISMATCH' && res.doc && Object.keys(res.doc).length) {
             // Someone else's version landed first. Rebase this client's edits
             // (both the rejected patch and anything typed since, captured by
@@ -2409,6 +2467,13 @@ function realtimeApplyRemotePatch(data) {
     if (!data || !data.patch) return;
     if (data.clientId && data.clientId === realtimeClientId) return;
     if (!window.jsonpatch || typeof window.jsonpatch.apply !== 'function') return;
+    if (realtimePatchIsUnsafe(data.patch)) {
+        // Remote patch could pollute Object.prototype; never apply it. Drop the
+        // shadow and resync from a clean server copy instead.
+        realtimeState.joined = false;
+        realtimeJoinIfReady();
+        return;
+    }
     var prevShadow = realtimeCloneDoc(realtimeState.shadowDoc || {});
     var nextShadow = realtimeCloneDoc(realtimeState.shadowDoc || {});
     try {

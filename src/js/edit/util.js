@@ -593,7 +593,12 @@ function copyToClipboard(text){
    Section-specific actions belong in default/<section>/script.js.
    Reading the vector on click, rather than baking it into an href at build time,
    keeps it current when metrics change after the link is created. */
-window.vgLinkActions = window.vgLinkActions || {};
-window.vgLinkActions.copyCvssVector = function (ctx) {
-    copyToClipboard(cvssjs.vector4(ctx.editor.getWatchedFieldValues() || {}));
-};
+// util.js is required server-side by routes/doc.js and routes/onedoc.js, where
+// `window` is undefined, so guard the browser-only registration (mirrors the
+// `typeof module` guard above for module.exports).
+if (typeof window !== 'undefined') {
+    window.vgLinkActions = window.vgLinkActions || {};
+    window.vgLinkActions.copyCvssVector = function (ctx) {
+        copyToClipboard(cvssjs.vector4(ctx.editor.getWatchedFieldValues() || {}));
+    };
+}
