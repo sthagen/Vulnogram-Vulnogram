@@ -2041,6 +2041,9 @@ var starting_value = {};
 var sourceEditor;
 var draftsBaseline = null;
 var draftsFeatureEnabled = (typeof draftsEnabled === 'boolean') ? draftsEnabled : true;
+// Set before a deliberate navigation (post-save redirect, delete) so the
+// unsaved-changes beforeunload prompt doesn't fire on it.
+var editorUnloadWarningDisabled = false;
 
 function parseOptionClasses(className) {
     var ret = {
@@ -4571,6 +4574,9 @@ if (document.getElementById('remove')) {
                 if (response.status == 200) {
                     infoMsg.textContent = "Deleted ";
                     errMsg.textContent = "";
+                    // Deliberate discard: don't prompt about unsaved edits on
+                    // the way back to the list.
+                    editorUnloadWarningDisabled = true;
                     window.location = "./";
                 } else {
                     showAlert("Error " + response.statusText);
@@ -4881,6 +4887,9 @@ function save(e, onSuccess) {
         })
         .then(function (res) {
             if (res.type == "go") {
+                // The document just persisted under a (possibly new) ID; this
+                // redirect must not trip the unsaved-changes prompt.
+                editorUnloadWarningDisabled = true;
                 window.location.href = res.to;
             } else if (res.type == "err") {
                 showAlert(res.msg);
@@ -5015,3 +5024,47 @@ function downloadHtml(title, element, link) {
 
 // showAlert is provided globally by public/js/vg-alert.js (loaded on every
 // page from views/head.pug) so non-editor pages can use it too.
+
+// True when the editor holds changes not persisted on the server. With
+// realtime sync joined, the persisted state is the last server-acked shadow;
+// otherwise it is the drafts baseline (set on load and after a successful
+// HTTP save).
+function editorHasUnsavedChanges() {
+    var doc = null;
+    try {
+        doc = typeof realtimeGetCurrentDoc === 'function' ? realtimeGetCurrentDoc() : getDraftDocValue();
+    } catch (e) {
+        doc = null;
+    }
+    if (!doc) return false;
+    if (window.realtimeEnabled && realtimeState && realtimeState.joined && realtimeState.shadowDoc) {
+        if (realtimeState.pending || realtimeState.dirty) return true;
+        try {
+            return draftsStableStringify(doc) !== draftsStableStringify(realtimeState.shadowDoc);
+        } catch (e) {
+            return true;
+        }
+    }
+    return draftsHasChanges(doc);
+}
+
+// Closing or navigating away from a tab with unsaved edits: browsers only
+// allow their own generic leave/stay prompt here, so the choice offered is
+// stay (and save) or leave. Either way, flush the debounced local draft
+// first so a leave can still be recovered from the drafts sidebar.
+window.addEventListener('beforeunload', function (e) {
+    if (editorUnloadWarningDisabled) return;
+    if (!editorHasUnsavedChanges()) return;
+    if (draftsCache && draftsCache.save) {
+        draftsCache.cancelSave();
+        var id = getDocID();
+        if (id) {
+            try {
+                draftsCache.save(id, getDraftDocValue(), getDraftValidationErrorCount());
+            } catch (err) {}
+        }
+    }
+    e.preventDefault();
+    // Chrome still requires returnValue to be set for the prompt to appear.
+    e.returnValue = '';
+});

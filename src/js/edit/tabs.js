@@ -174,6 +174,9 @@ if (document.getElementById('remove')) {
                 if (response.status == 200) {
                     infoMsg.textContent = "Deleted ";
                     errMsg.textContent = "";
+                    // Deliberate discard: don't prompt about unsaved edits on
+                    // the way back to the list.
+                    editorUnloadWarningDisabled = true;
                     window.location = "./";
                 } else {
                     showAlert("Error " + response.statusText);
