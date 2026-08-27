@@ -103,6 +103,11 @@ mixin portal
                                         - j--;
             button.btn.vgi-forward#bulkTransferBtn(onclick='cveBulkTransfer()' disabled) Transfer
             button.btn.vgi-del#bulkRejectBtn(onclick='cveBulkReject()' disabled) Reject
+            label#cveQuota.lbl.flx.nobr.hid(title='CVE ID reservation quota')
+                ='Quota '
+                meter#cveQuotaMeter(min='0' max='1' value='0')
+                =' '
+                span.vgi-info#cveQuotaText
 
         .flx
             label#cveUser
