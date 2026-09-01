@@ -117,7 +117,7 @@ module.exports = function (name, opts) {
             extLinkSources.add(opts.facet[key].extLink.from);
         }
     }
-    for (key in opts.facet) {
+    for (var key in opts.facet) {
         var options = opts.facet[key];
         if (typeof options.path === 'string') {
             addAllowedFieldPath(options.path);

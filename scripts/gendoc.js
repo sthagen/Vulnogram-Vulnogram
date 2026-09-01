@@ -1746,7 +1746,7 @@ function buildHtmlDocument(manifest, markdown) {
       escapeAttr(link.label || '') +
       '</a>'
   );
-  const editorHref = escapeAttr((sidebarLinks[0] && sidebarLinks[0].href) || 'https://www.vulnogram.org/');
+//  const editorHref = escapeAttr((sidebarLinks[0] && sidebarLinks[0].href) || 'https://www.vulnogram.org/');
 
   return [
     '<!DOCTYPE html>',
