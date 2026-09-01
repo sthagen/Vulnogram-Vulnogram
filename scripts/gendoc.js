@@ -1673,7 +1673,7 @@ function escapeAttr(value) {
 // The page is wrapped in the same sidebar/layout shell as the Vulnogram editor
 // (views/layout.pug) so readers can navigate back to the editor.
 function buildHtmlDocument(manifest, markdown) {
-  const title = String(manifest.title || 'Vulnogram documentation').replace(/<[^>]*>/g, '');
+  const title = escapeAttr(String(manifest.title || 'Vulnogram documentation'));
   const headLines = [];
   const bodyLines = [];
   let quoteLines = null;
