@@ -113,7 +113,16 @@ getPR: function(cve) {
  * @returns {string} A formatted, user-friendly date string.
  */
 formatFriendlyDate: function (isoString) {
+  if (isoString === "" || isoString === null || isoString === 0) {
+    return "-";
+  }
+
   const date = new Date(isoString);
+
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
   const now = new Date();
 
   // Create date objects for comparison, stripping out the time part.
@@ -244,6 +253,29 @@ getDocuments: async function(schemaName, ids, paths) {
     fileSize : function(a,b,c,d,e){
         return (b=Math,c=b.log,d=1024,e=c(a)/c(d)|0,a/b.pow(d,e)).toFixed(2)
             +' '+(e?'KMGTPEZY'[--e]+'B':'Bytes')
+    },
+    diffEdgeClass: function(op, side) {
+        if (op == 'add')     return side == 'next'    ? 'diff-add'   : '';
+        if (op == 'remove')  return side == 'current' ? 'diff-del'   : '';
+        if (op == 'replace') return side == 'current' ? 'diff-chg-l' : 'diff-chg-r';
+        return '';
+    },
+    cvssIcons: {
+        attackVector:              { NETWORK: 'cvss-net', ADJACENT_NETWORK: 'cvss-adj', ADJACENT: 'cvss-adj', LOCAL: 'cvss-user', PHYSICAL: 'cvss-physical' },
+        attackComplexity:          { HIGH: 'rocket', LOW: 'paper-plane' },
+        attackRequirements:        { PRESENT: 'cvss-required', NONE: 'cvss-direct' },
+        privilegesRequired:        { HIGH: 'king', LOW: 'pawn', NONE: 'thief' },
+        userInteraction:           { REQUIRED: 'cvss-ui', ACTIVE: 'alert', PASSIVE: 'eye-close', NONE: 'cvss-direct' },
+        scope:                     { UNCHANGED: 'cvss-direct', CHANGED: 'cvss-scope-change' },
+        confidentialityImpact:     { HIGH: 'eye', LOW: 'eye-half', NONE: 'eye-close' },
+        integrityImpact:           { HIGH: 'box-high', LOW: 'box-low', NONE: 'box' },
+        availabilityImpact:        { HIGH: 'signal-1', LOW: 'signal-2', NONE: 'signal' },
+        vulnConfidentialityImpact: { HIGH: 'eye', LOW: 'eye-half', NONE: 'eye-close' },
+        subConfidentialityImpact:  { HIGH: 'eye', LOW: 'eye-half', NONE: 'eye-close' },
+        vulnIntegrityImpact:       { HIGH: 'box-high', LOW: 'box-low', NONE: 'box' },
+        subIntegrityImpact:        { HIGH: 'box-high', LOW: 'box-low', NONE: 'box' },
+        vulnAvailabilityImpact:    { HIGH: 'signal-1', LOW: 'signal-2', NONE: 'signal' },
+        subAvailabilityImpact:     { HIGH: 'signal-1', LOW: 'signal-2', NONE: 'signal' }
     }
 };
 if(typeof module !== 'undefined') {
@@ -563,6 +595,21 @@ function copyToClipboard(text){
         console.error('Failed to copy text: ', err);
     });
     return false;
+}
+
+/* Schema link action shared by every section that scores CVSS v4 (cve5, cvss4),
+   so it lives here beside cvssjs and copyToClipboard rather than in one section.
+   Section-specific actions belong in default/<section>/script.js.
+   Reading the vector on click, rather than baking it into an href at build time,
+   keeps it current when metrics change after the link is created. */
+// util.js is required server-side by routes/doc.js and routes/onedoc.js, where
+// `window` is undefined, so guard the browser-only registration (mirrors the
+// `typeof module` guard above for module.exports).
+if (typeof window !== 'undefined') {
+    window.vgLinkActions = window.vgLinkActions || {};
+    window.vgLinkActions.copyCvssVector = function (ctx) {
+        copyToClipboard(cvssjs.vector4(ctx.editor.getWatchedFieldValues() || {}));
+    };
 }
 
 /**
@@ -1994,6 +2041,9 @@ var starting_value = {};
 var sourceEditor;
 var draftsBaseline = null;
 var draftsFeatureEnabled = (typeof draftsEnabled === 'boolean') ? draftsEnabled : true;
+// Set before a deliberate navigation (post-save redirect, delete) so the
+// unsaved-changes beforeunload prompt doesn't fire on it.
+var editorUnloadWarningDisabled = false;
 
 function parseOptionClasses(className) {
     var ret = {
@@ -2111,23 +2161,63 @@ var realtimeState = {
     inflightPatch: null,
     inflightBase: null
 };
-var realtimeClientId = (function () {
-    var key = 'vulnogram-client-id';
-    try {
-        var existing = window.localStorage.getItem(key);
-        if (existing) {
-            return existing;
-        }
-        var fresh = 'client-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-        window.localStorage.setItem(key, fresh);
-        return fresh;
-    } catch (e) {
-        return 'client-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-    }
-})();
+// Must be unique per tab, so never persist it: localStorage is origin-wide
+// (and "Duplicate Tab" copies sessionStorage), which would give same-browser
+// tabs one shared id and make the doc:patched echo check below drop each
+// other's patches as self-echo. Reloads don't need a stable id — rejoin
+// refreshes the shadow, and the save header reads this live variable.
+var realtimeClientId = 'client-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
 
 function realtimeCloneDoc(doc) {
     return doc ? JSON.parse(JSON.stringify(doc)) : {};
+}
+
+// Mirror of the server guard (lib/realtime.js): refuse any patch that could
+// reach Object.prototype. window.jsonpatch.apply walks with a bare obj[key] and
+// assigns with a bare obj[key] = value, so a hostile or out-of-band patch would
+// otherwise pollute the editor page. Run this before every apply(); the server
+// screen only covers patches that transit its socket handler.
+function realtimeIsUnsafeKey(key) {
+    return key === '__proto__'
+        || key === 'prototype'
+        || key === 'constructor'
+        || Object.prototype.hasOwnProperty.call(Object.prototype, key);
+}
+
+function realtimePointerHasUnsafeKey(pointer) {
+    if (typeof pointer !== 'string') return false;
+    var segments = pointer.split('/');
+    for (var i = 0; i < segments.length; i++) {
+        var segment = segments[i].replace(/~1/g, '/').replace(/~0/g, '~');
+        if (realtimeIsUnsafeKey(segment)) return true;
+    }
+    return false;
+}
+
+function realtimeValueHasUnsafeKey(value) {
+    if (!value || typeof value !== 'object') return false;
+    if (Array.isArray(value)) {
+        for (var i = 0; i < value.length; i++) {
+            if (realtimeValueHasUnsafeKey(value[i])) return true;
+        }
+        return false;
+    }
+    var keys = Object.keys(value);
+    for (var j = 0; j < keys.length; j++) {
+        if (realtimeIsUnsafeKey(keys[j]) || realtimeValueHasUnsafeKey(value[keys[j]])) return true;
+    }
+    return false;
+}
+
+function realtimePatchIsUnsafe(patch) {
+    if (!Array.isArray(patch)) return true;
+    for (var i = 0; i < patch.length; i++) {
+        var op = patch[i];
+        if (!op || typeof op !== 'object') return true;
+        if (realtimePointerHasUnsafeKey(op.path) || realtimePointerHasUnsafeKey(op.from)) return true;
+        if (Object.prototype.hasOwnProperty.call(op, 'value') && realtimeValueHasUnsafeKey(op.value)) return true;
+    }
+    return false;
 }
 
 function realtimeSetStatus(connected, message) {
@@ -2163,6 +2253,38 @@ function realtimeGetCurrentDoc() {
     return null;
 }
 
+function realtimeSetEditorContents(doc) {
+    var ok = true;
+    realtimeApplying = true;
+    try {
+        if (docEditor) {
+            docEditor.setValue(doc);
+        }
+    } catch (e) {
+        ok = false;
+    }
+    try {
+        // Keep the source tab in sync when it is the visible editor, so
+        // realtimeGetCurrentDoc() never reads text older than the shadow.
+        var sourceTab = document.getElementById('sourceTab');
+        if (sourceTab && sourceTab.checked && sourceEditor) {
+            insync = true;
+            try {
+                sourceEditor.getSession().setValue(JSON.stringify(doc, null, 2));
+                sourceEditor.clearSelection();
+            } finally {
+                insync = false;
+            }
+            if (mainTabGroup && mainTabGroup.changeIndex && mainTabGroup.changeIndex.length > 1) {
+                mainTabGroup.changeIndex[1] = mainTabGroup.changeIndex[0];
+            }
+        }
+    } catch (e) {
+    }
+    realtimeApplying = false;
+    return ok;
+}
+
 function realtimeJoinIfReady() {
     if (!window.realtimeEnabled) return;
     if (!realtimeState.socket || !realtimeState.socket.connected) return;
@@ -2175,26 +2297,73 @@ function realtimeJoinIfReady() {
         if (!res || !res.ok) {
             return;
         }
+        var serverDoc = res.doc || {};
+        // Base for detecting genuine local edits: the last server state this
+        // client synced (rejoin), else the document as loaded into the editor
+        // (first join). Never the fresh server doc — diffing against that
+        // turns everyone else's newer changes into a bogus local "edit".
+        var prevBase = null;
+        if (realtimeState.currentDocId === docId && realtimeState.shadowDoc) {
+            prevBase = realtimeState.shadowDoc;
+        } else if (typeof draftsBaseline === 'string' && draftsBaseline) {
+            try {
+                prevBase = JSON.parse(draftsBaseline);
+            } catch (e) {
+            }
+        }
         realtimeState.currentDocId = docId;
-        realtimeState.shadowDoc = realtimeCloneDoc(res.doc || {});
-        realtimeState.shadowVersion = typeof res.version === 'number' ? res.version : 0;
         realtimeState.joined = true;
         if (typeof res.viewers === 'number') {
             realtimeSetViewers(res.viewers);
         }
-        realtimeMaybeSyncLocal();
+        realtimeMergeServerState(serverDoc, typeof res.version === 'number' ? res.version : 0, prevBase);
     });
 }
 
-function realtimeMaybeSyncLocal() {
-    if (!realtimeState.joined || realtimeState.pending) return;
+// Adopt a newer server state without discarding edits this browser has made
+// but not yet had accepted. `prevBase` is the doc state those local edits were
+// made against (the previous shadow, or the initial baseline). We rebase the
+// local delta onto the server copy so remote changes and local changes both
+// survive; only a genuine conflict (local delta no longer applies) lets the
+// server copy win.
+function realtimeMergeServerState(serverDoc, serverVersion, prevBase) {
+    if (!window.jsonpatch || typeof window.jsonpatch.compare !== 'function') return;
+    serverDoc = serverDoc || {};
     var currentDoc = realtimeGetCurrentDoc();
-    if (!currentDoc || !window.jsonpatch || typeof window.jsonpatch.compare !== 'function') {
-        return;
+    var localPatch = (prevBase && currentDoc) ? window.jsonpatch.compare(prevBase, currentDoc) : [];
+    var target = realtimeCloneDoc(serverDoc);
+    var haveLocal = !!(localPatch && localPatch.length);
+    if (haveLocal && realtimePatchIsUnsafe(localPatch)) {
+        // The local delta would reach Object.prototype; discard it and take the
+        // server copy rather than applying it.
+        target = realtimeCloneDoc(serverDoc);
+        haveLocal = false;
     }
-    var patch = window.jsonpatch.compare(realtimeState.shadowDoc || {}, currentDoc);
-    if (patch && patch.length) {
-        realtimeSendPatch(patch);
+    if (haveLocal) {
+        try {
+            window.jsonpatch.apply(target, localPatch, true);
+        } catch (e) {
+            // Local edits collide with the server copy: server wins.
+            target = realtimeCloneDoc(serverDoc);
+            haveLocal = false;
+        }
+    }
+    // Only rewrite the editor when it actually differs, so a viewer with no
+    // pending edits isn't churned (cursor reset) on every remote change.
+    if (!currentDoc || window.jsonpatch.compare(currentDoc, target).length) {
+        if (!realtimeSetEditorContents(target)) {
+            // Editor write failed: leave the shadow untouched (consistent but
+            // stale) and force a fresh resync rather than diverging.
+            realtimeState.joined = false;
+            return;
+        }
+    }
+    realtimeState.shadowDoc = realtimeCloneDoc(serverDoc);
+    if (typeof serverVersion === 'number') {
+        realtimeState.shadowVersion = serverVersion;
+    }
+    if (haveLocal) {
+        realtimeSchedulePatch();
     }
 }
 
@@ -2241,19 +2410,30 @@ function realtimeSendPatch(patch) {
             }
             return;
         }
+        var rejectedBase = realtimeState.inflightBase;
         realtimeState.inflightPatch = null;
         realtimeState.inflightBase = null;
-        if (res && res.reason === 'VERSION_MISMATCH' && res.doc) {
-            realtimeApplying = true;
-            try {
-                if (docEditor) {
-                    docEditor.setValue(res.doc);
-                }
-            } catch (e) {
-            }
-            realtimeApplying = false;
-            realtimeState.shadowDoc = realtimeCloneDoc(res.doc || {});
-            realtimeState.shadowVersion = typeof res.version === 'number' ? res.version : realtimeState.shadowVersion;
+        if (res && res.reason === 'PATCH_INVALID') {
+            // Server refused the patch (e.g. it reached Object.prototype).
+            // Surface it and stop, rather than clearing "Saving..." never and
+            // re-sending the identical rejected patch on every later keystroke.
+            infoMsg.textContent = "Save error";
+            return;
+        }
+        if (res && res.reason === 'VERSION_MISMATCH' && res.doc && Object.keys(res.doc).length) {
+            // Someone else's version landed first. Rebase this client's edits
+            // (both the rejected patch and anything typed since, captured by
+            // diffing against the base the rejected patch was built on) onto
+            // the server copy instead of discarding them.
+            realtimeMergeServerState(res.doc, typeof res.version === 'number' ? res.version : realtimeState.shadowVersion, rejectedBase);
+            return;
+        }
+        if (res && res.reason === 'VERSION_MISMATCH') {
+            // Server has no usable copy (e.g. document was deleted). Don't wipe
+            // the editor; resync fresh and surface the condition.
+            infoMsg.textContent = "Sync error";
+            realtimeState.joined = false;
+            realtimeJoinIfReady();
             return;
         }
         if (realtimeState.dirty) {
@@ -2290,23 +2470,27 @@ function realtimeApplyRemotePatch(data) {
     if (!data || !data.patch) return;
     if (data.clientId && data.clientId === realtimeClientId) return;
     if (!window.jsonpatch || typeof window.jsonpatch.apply !== 'function') return;
+    if (realtimePatchIsUnsafe(data.patch)) {
+        // Remote patch could pollute Object.prototype; never apply it. Drop the
+        // shadow and resync from a clean server copy instead.
+        realtimeState.joined = false;
+        realtimeJoinIfReady();
+        return;
+    }
+    var prevShadow = realtimeCloneDoc(realtimeState.shadowDoc || {});
     var nextShadow = realtimeCloneDoc(realtimeState.shadowDoc || {});
     try {
         window.jsonpatch.apply(nextShadow, data.patch, true);
     } catch (e) {
+        // Shadow diverged from the server; force a fresh join to resync.
+        realtimeState.joined = false;
         realtimeJoinIfReady();
         return;
     }
-    realtimeState.shadowDoc = nextShadow;
-    realtimeState.shadowVersion = typeof data.newVersion === 'number' ? data.newVersion : realtimeState.shadowVersion;
-    realtimeApplying = true;
-    try {
-        if (docEditor) {
-            docEditor.setValue(nextShadow);
-        }
-    } catch (e) {
-    }
-    realtimeApplying = false;
+    // Rebase any edits this user has made but not yet committed (the diff
+    // between the pre-patch shadow and what's in the editor now) on top of the
+    // incoming remote change, rather than overwriting them.
+    realtimeMergeServerState(nextShadow, data.newVersion, prevShadow);
 }
 
 function initRealtime() {
@@ -2324,6 +2508,17 @@ function initRealtime() {
     realtimeState.socket.on('disconnect', function () {
         realtimeState.connected = false;
         realtimeState.joined = false;
+        // A patch in flight when the socket drops will never be acked, which
+        // would leave `pending` stuck true and silently kill all future saves.
+        // Clear it so the post-reconnect rejoin re-sends the still-local edits.
+        realtimeState.pending = false;
+        realtimeState.dirty = false;
+        realtimeState.inflightPatch = null;
+        realtimeState.inflightBase = null;
+        if (realtimeState.debounceTimer) {
+            clearTimeout(realtimeState.debounceTimer);
+            realtimeState.debounceTimer = null;
+        }
         realtimeSetStatus(false);
         realtimeSetViewers(0);
     });
@@ -2944,6 +3139,20 @@ JSONEditor.AbstractEditor.prototype.showStar = function () {
     return this.isRequired() && !(this.schema.readOnly || this.schema.readonly || this.schema.template)
 }
 
+/* Registry of named click handlers for schema links. A link declares
+   "action": "<name>" instead of a javascript: href or an inline onclick, so the
+   button still works under a CSP that lacks 'unsafe-inline'. Only registered
+   names can be invoked, so a schema - including a remote one - cannot name
+   arbitrary code.
+
+   Handlers belong to whichever section owns them and are registered from
+   default/<section>/script.js; nothing section-specific goes here. Section
+   scripts are inlined ahead of jsoneditor.min.js, so this is a plain global
+   rather than a JSONEditor property: either side may run first, so always
+   extend the object instead of replacing it.
+   A handler is called with {editor, element, event}. */
+window.vgLinkActions = window.vgLinkActions || {};
+
 JSONEditor.AbstractEditor.prototype.addLinks = function () {
     /* Add links */
     if (!this.no_link_holder) {
@@ -2986,21 +3195,28 @@ JSONEditor.AbstractEditor.prototype.addLinks = function () {
             }
             if(link.target === false) {
                 h.removeAttribute('target')
-            } else {
+            } else if (link.target !== undefined) {
+                /* Only override when the schema asks for a target. Without this
+                   guard an absent target set the literal string "undefined",
+                   clobbering the target="_blank" that getLink() already applied. */
                 h.setAttribute('target', link.target)
             }
-            if(link.onclick) {
-                var onClickHandler = link.onclick;
-                if (typeof onClickHandler === 'string') {
-                    try {
-                        var onClickTemplate = this.jsoneditor.compileTemplate(onClickHandler, this.template_engine);
-                        this.refreshWatchedFieldValues();
-                        onClickHandler = onClickTemplate(this.getWatchedFieldValues() || {});
-                    } catch (e) {
-                        onClickHandler = link.onclick;
+            /* Schema "onclick" is intentionally not supported: it would let a
+               schema (including a remote one) inject arbitrary code, and the
+               attribute is dead under CSP anyway. Use "action" instead. */
+            if(link.action) {
+                /* let, not var: each iteration needs its own binding for the closure */
+                let actionName = link.action;
+                let actionEditor = this;
+                h.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    var handler = window.vgLinkActions[actionName];
+                    if (typeof handler !== 'function') {
+                        console.error('Unregistered schema link action: ' + actionName);
+                        return;
                     }
-                }
-                h.setAttribute('onclick', onClickHandler);
+                    handler({ editor: actionEditor, element: this, event: event });
+                });
             }
             if(link.place == "container" && this.container) {
                 this.container.appendChild(h);
@@ -3471,6 +3687,16 @@ JSONEditor.defaults.editors.dateTime = class dateTime extends JSONEditor.default
         super.build();
         this.input.className = "txt";
         this.input.setAttribute("tz", localTZ);
+        // Firefox datetime-local won't emit a value until both date and time
+        // sub-fields are filled. Pre-fill with current time on focus so the
+        // user only needs to pick a date and the time is already valid.
+        this.input.addEventListener('focus', () => {
+            if (!this.input.value) {
+                var now = new Date();
+                var local = new Date(now.getTime() - (now.getTimezoneOffset() * 60000));
+                this.input.value = local.toJSON().slice(0, 16);
+            }
+        });
     }
 };
 
@@ -3817,20 +4043,33 @@ JSONEditor.defaults.editors.simplehtml = class simplehtml extends JSONEditor.def
     }
     showValidationErrors(errs) {
         var self = this;
+        var richTextPathSuffix = '.supportingMedia.0.value';
 
         if(this.jsoneditor.options.show_errors === "always") {}
         else if(!this.is_dirty && this.previous_error_setting===this.jsoneditor.options.show_errors) return;
         
         this.previous_error_setting = this.jsoneditor.options.show_errors;
     
+        var relatedPaths = {};
+        relatedPaths[self.path] = true;
+        if (self.path && self.path.slice(-richTextPathSuffix.length) === richTextPathSuffix) {
+            var descriptionPath = self.path.slice(0, -richTextPathSuffix.length);
+            relatedPaths[descriptionPath] = true;
+            relatedPaths[descriptionPath + '.value'] = true;
+        }
+
         var messages = [];
         errs.forEach(i => {
-            if(i.path === self.path) {
+            if(i.path && relatedPaths[i.path] && messages.indexOf(i.message) === -1) {
                 messages.push(i.message);
             }
-        });    
+        });
         if(messages.length) {
-          this.theme.addInputError(this.control, messages.join('. ')+'.');
+          var messageText = messages.join('. ');
+          if (messageText[messageText.length - 1] !== '.') {
+              messageText += '.';
+          }
+          this.theme.addInputError(this.control, messageText);
         }
         else {
           this.theme.removeInputError(this.control);
@@ -4335,6 +4574,9 @@ if (document.getElementById('remove')) {
                 if (response.status == 200) {
                     infoMsg.textContent = "Deleted ";
                     errMsg.textContent = "";
+                    // Deliberate discard: don't prompt about unsaved edits on
+                    // the way back to the list.
+                    editorUnloadWarningDisabled = true;
                     window.location = "./";
                 } else {
                     showAlert("Error " + response.statusText);
@@ -4350,6 +4592,20 @@ if (document.getElementById('save1')) {
     document.getElementById('save1').addEventListener('click', save);
 }
 
+function formatErrorPathLabel(path) {
+    var normalized = String(path || '').trim().replace(/^\^?root\.?/, '');
+    if (!normalized) {
+        return 'Document';
+    }
+    var parts = normalized.split('.');
+    for (var i = parts.length - 1; i >= 0; i--) {
+        if (!/^\d+$/.test(parts[i])) {
+            return parts[i];
+        }
+    }
+    return normalized;
+}
+
 function scroll2Err(x) {
     var path = x.getAttribute('e_path');
     mainTabGroup.focus(0);
@@ -4358,6 +4614,10 @@ function scroll2Err(x) {
             path = 'root.' + path;
         }
         var ee = docEditor.getEditor(path);
+        if (!ee || !ee.container || (ee.schema && ee.schema.options && ee.schema.options.hidden) || ee.format === 'hidden') {
+            var lastDot = path.lastIndexOf('.');
+            if (lastDot > 0) ee = docEditor.getEditor(path.substring(0, lastDot));
+        }
         if(ee && ee.container) {
             var stkH = document.getElementById("vgHead").offsetHeight;
             ee.container.style["scroll-margin-top"] = (stkH + 40) + "px";
@@ -4367,27 +4627,56 @@ function scroll2Err(x) {
     }
 }
 
+var _errHighlightedContainers = [];
+
+function getErrLabel(path) {
+    var tryPath = path;
+    var numericSuffix = '';
+    while (tryPath) {
+        var le = docEditor.getEditor(tryPath);
+        if (le) {
+            var lopts = le.schema && le.schema.options;
+            if (!(lopts && lopts.hidden) && le.format !== 'hidden') {
+                var lbl = (le.schema && le.schema.title) ? le.schema.title.trim() : '';
+                if (lbl && /^\d+$/.test(lbl)) {
+                    if (!numericSuffix) numericSuffix = lbl;
+                } else if (lbl) {
+                    return numericSuffix ? lbl + ' ' + numericSuffix : lbl;
+                }
+            }
+        }
+        var lastDot = tryPath.lastIndexOf('.');
+        if (lastDot < 0) break;
+        tryPath = tryPath.substring(0, lastDot);
+    }
+    return null;
+}
+
 function showJSONerrors(errors) {
+    _errHighlightedContainers.forEach(function(c) { c.style.boxShadow = ''; c.style.border = ''; });
+    _errHighlightedContainers = [];
     errList.textContent="";
     for (var i = 0; i < errors.length; i++) {
         var e = errors[i];
-        var showLabel = undefined;
+        var showLabel = getErrLabel(e.path);
         var ee = docEditor.getEditor(e.path);
         if (ee) {
-            if(ee.header && ee.header.innerText) {
-                showLabel = ee.header.innerText;
-            }
-            if(!showLabel && !(ee.original_schema === undefined) && !(ee.original_schema.title === undefined)) {
-                showLabel = ee.original_schema.title
-            } else {
-                showLabel = ee.getHeaderText();
+            var smEditor = docEditor.getEditor(e.path + '.supportingMedia.0.value');
+            if (smEditor && smEditor.control) {
+                if (ee.container) {
+                    ee.container.style.boxShadow = '';
+                    ee.container.style.border = '';
+                }
+                smEditor.control.style.boxShadow = "rgba(252, 114, 114, 0.33) 0px 0px 0px 2px";
+                smEditor.control.style.border = "1px solid coral";
+                _errHighlightedContainers.push(smEditor.control);
             }
         }
         var a = document.createElement('a');
         a.setAttribute('class', 'rqd')
         a.setAttribute('e_path', e.path);
         a.setAttribute('onclick', 'scroll2Err(this)');
-        a.textContent = (showLabel && showLabel.trim() ? showLabel : e.path.replace('^root.','')) + ": " + e.message;
+        a.textContent = (showLabel && showLabel.trim() ? showLabel : formatErrorPathLabel(e.path)) + ": " + e.message;
         errList.appendChild(a);
         errList.appendChild(document.createElement('br'))
     }
@@ -4573,14 +4862,20 @@ function save(e, onSuccess) {
         return;
     }
     infoMsg.textContent = "Saving...";
+    var saveHeaders = {
+        'Accept': 'application/json, text/plain, */*',
+        'Content-Type': 'application/json',
+        'CSRF-Token': csrfToken
+    };
+    // Identify this browser's realtime session so the server-side broadcast of
+    // this save skips our own socket (we resync our shadow directly below).
+    if (window.realtimeEnabled && typeof realtimeClientId === 'string') {
+        saveHeaders['X-Realtime-Client-Id'] = realtimeClientId;
+    }
     fetch(postUrl ? postUrl : '', {
             method: 'POST',
             credentials: 'include',
-            headers: {
-                'Accept': 'application/json, text/plain, */*',
-                'Content-Type': 'application/json',
-                'CSRF-Token': csrfToken
-            },
+            headers: saveHeaders,
             redirect: 'error',
             body: JSON.stringify(j),
         })
@@ -4592,6 +4887,9 @@ function save(e, onSuccess) {
         })
         .then(function (res) {
             if (res.type == "go") {
+                // The document just persisted under a (possibly new) ID; this
+                // redirect must not trip the unsaved-changes prompt.
+                editorUnloadWarningDisabled = true;
                 window.location.href = res.to;
             } else if (res.type == "err") {
                 showAlert(res.msg);
@@ -4605,6 +4903,13 @@ function save(e, onSuccess) {
                 if (draftsCache && draftsCache.remove) {
                     draftsCache.cancelSave();
                     draftsCache.remove(getDocID());
+                }
+                // This HTTP save bumped the persisted __v out from under our
+                // realtime shadow. Rejoin to adopt the new version so the next
+                // live edit doesn't trip a spurious VERSION_MISMATCH.
+                if (window.realtimeEnabled && typeof realtimeJoinIfReady === 'function') {
+                    realtimeState.joined = false;
+                    realtimeJoinIfReady();
                 }
                 getChanges(getDocID());
                 if (onSuccess)
@@ -4717,25 +5022,49 @@ function downloadHtml(title, element, link) {
     link.download = file.name;
 }
 
-function showAlert(msg, smallmsg, timer, showCancel) {
-    errMsg.textContent="";
-    infoMsg.textContent="";
-    if (showCancel) {
-        document.getElementById("alertCancel").style.display = "inline-block";
-    } else {
-        var temp1 = document.getElementById("alertOk");
-        temp1.setAttribute("onclick", "document.getElementById('alertDialog').close();");
-        document.getElementById("alertCancel").style.display = "none";
+// showAlert is provided globally by public/js/vg-alert.js (loaded on every
+// page from views/head.pug) so non-editor pages can use it too.
+
+// True when the editor holds changes not persisted on the server. With
+// realtime sync joined, the persisted state is the last server-acked shadow;
+// otherwise it is the drafts baseline (set on load and after a successful
+// HTTP save).
+function editorHasUnsavedChanges() {
+    var doc = null;
+    try {
+        doc = typeof realtimeGetCurrentDoc === 'function' ? realtimeGetCurrentDoc() : getDraftDocValue();
+    } catch (e) {
+        doc = null;
     }
-    document.getElementById("alertMessage").innerText = msg;
-    if (smallmsg)
-        document.getElementById("smallAlert").innerText = smallmsg;
-    else
-        document.getElementById("smallAlert").innerText = " ";
-    if (!document.getElementById("alertDialog").hasAttribute("open"))
-        document.getElementById("alertDialog").showModal();
-    if (timer)
-        setTimeout(function () {
-            document.getElementById("alertDialog").close();
-        }, timer);
+    if (!doc) return false;
+    if (window.realtimeEnabled && realtimeState && realtimeState.joined && realtimeState.shadowDoc) {
+        if (realtimeState.pending || realtimeState.dirty) return true;
+        try {
+            return draftsStableStringify(doc) !== draftsStableStringify(realtimeState.shadowDoc);
+        } catch (e) {
+            return true;
+        }
+    }
+    return draftsHasChanges(doc);
 }
+
+// Closing or navigating away from a tab with unsaved edits: browsers only
+// allow their own generic leave/stay prompt here, so the choice offered is
+// stay (and save) or leave. Either way, flush the debounced local draft
+// first so a leave can still be recovered from the drafts sidebar.
+window.addEventListener('beforeunload', function (e) {
+    if (editorUnloadWarningDisabled) return;
+    if (!editorHasUnsavedChanges()) return;
+    if (draftsCache && draftsCache.save) {
+        draftsCache.cancelSave();
+        var id = getDocID();
+        if (id) {
+            try {
+                draftsCache.save(id, getDraftDocValue(), getDraftValidationErrorCount());
+            } catch (err) {}
+        }
+    }
+    e.preventDefault();
+    // Chrome still requires returnValue to be set for the prompt to appear.
+    e.returnValue = '';
+});

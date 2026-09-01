@@ -892,9 +892,11 @@ JSONEditor.defaults.editors.string.prototype.sanitize = function(value) {
         if (changed) {
             super.setValue(value, initial);
             if (this.container) {
+                /* || [] so clearing the value redraws the empty box instead of
+                   blanking it; the comparison above still uses the raw value. */
                 this.container.innerHTML = pugRender({
                     renderTemplate: 'cpeApplicability',
-                    doc: value
+                    doc: value || []
                 })
             }
             if(notify)
@@ -927,12 +929,16 @@ JSONEditor.defaults.editors.string.prototype.sanitize = function(value) {
             this.label.setAttribute('title', this.schema.options.infoText);
         }
         if (this.schema.description) this.description = this.theme.getFormInputDescription(this.schema.description);
-        if (this.value) {
-            this.container.innerHTML = pugRender({
-                renderTemplate: 'cpeApplicability',
-                doc: this.value
-            })
-        }
+        /* Render even with no value: the mixin shows just its header and controls
+           for an empty list, and the Auto Update checkbox it draws is the only way
+           to switch auto-generation on. Gating on this.value hid the box for any
+           record without cpeApplicability, leaving no way to enable it.
+           Pass [] rather than undefined - views/render.pug skips the mixin on a
+           falsy doc. */
+        this.container.innerHTML = pugRender({
+            renderTemplate: 'cpeApplicability',
+            doc: this.value || []
+        })
         if (this.schema.template) {
             const callback = this.expandCallbacks('template', { template: this.schema.template })
             if (typeof callback.template === 'function') this.template = callback.template

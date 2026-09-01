@@ -680,6 +680,27 @@ async function applyAction(page, action, context) {
       );
       break;
     }
+    case 'seedCnaList': {
+      const entries = Array.isArray(action.entries) ? action.entries : [];
+      if (entries.length === 0) {
+        throw new Error('seedCnaList action requires non-empty "entries"');
+      }
+      await page.evaluate((cnaEntries) => {
+        const list = cnaEntries
+          .filter((entry) => entry && entry.shortName)
+          .map((entry) => ({
+            shortName: String(entry.shortName),
+            n: String(entry.n || entry.shortName)
+          }));
+        if (list.length === 0) {
+          throw new Error('seedCnaList received no valid entries');
+        }
+        // portal.js declares `var _cnaListCache` at top level of a classic
+        // script, so this window property is the same binding cveLoadCnaList reads.
+        window._cnaListCache = list;
+      }, entries);
+      break;
+    }
     case 'openDraftPublishDialog': {
       await page.evaluate(async () => {
         if (typeof window.cveOpenDraftPublishDialog === 'function') {
@@ -1510,6 +1531,10 @@ function buildMarkdown(manifest, screenshotStatuses, generatedAt) {
     { label: 'Users', icon: 'cog' },
     { label: 'Reject this CVE ID', icon: 'del' },
     { label: 'Reject this ID', icon: 'no' },
+    { label: 'Reject All', icon: 'del' },
+    { label: 'Reject', icon: 'del' },
+    { label: 'Transfer this CVE ID', icon: 'forward' },
+    { label: 'Transfer', icon: 'forward' },
     { label: 'Manage', icon: 'export' }
   ];
 
@@ -1616,6 +1641,145 @@ function buildMarkdown(manifest, screenshotStatuses, generatedAt) {
     }
   }
   return lines.join('\n');
+}
+
+function renderInlineMarkdown(text) {
+  return String(text)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\[([^\]]+)\]\(([^()\s]+)\)/g, '<a href="$2">$1</a>');
+}
+
+const DEFAULT_SIDEBAR_LINKS = [
+  { icon: 'vgi-cvev', label: 'CVE Editor', href: 'https://www.vulnogram.org/', title: 'Open the Vulnogram CVE editor' },
+  { icon: 'vgi-cvss-logo', label: 'CVSS 4.0', href: 'https://www.vulnogram.org/cvss4', title: 'Common Vulnerability Scoring System' },
+  { icon: 'vgi-wave', label: 'Seaview - CVE Search', href: 'https://www.vulnogram.org/seaview/', title: 'Search and View CVEs' },
+  { icon: 'vgi-what', label: 'Documentation', href: './', title: 'Using Vulnogram with CVE Services', active: true }
+];
+
+function escapeAttr(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// GitHub Pages for vulnogram.org has Jekyll disabled (.nojekyll), so index.md
+// is served raw and /docs/ has no directory index. Emit a real index.html from
+// the markdown this script just built. The markdown grammar is fully under our
+// control (see buildMarkdown), so only those constructs are handled here:
+// #/##/### headings, raw HTML lines, *caption* lines, > blockquotes, paragraphs.
+// The page is wrapped in the same sidebar/layout shell as the Vulnogram editor
+// (views/layout.pug) so readers can navigate back to the editor.
+function buildHtmlDocument(manifest, markdown) {
+  const title = escapeAttr(String(manifest.title || 'Vulnogram documentation'));
+  const headLines = [];
+  const bodyLines = [];
+  let quoteLines = null;
+
+  function flushQuote() {
+    if (quoteLines && quoteLines.length > 0) {
+      bodyLines.push('<blockquote>');
+      for (const q of quoteLines) {
+        bodyLines.push('<p>' + renderInlineMarkdown(q) + '</p>');
+      }
+      bodyLines.push('</blockquote>');
+    }
+    quoteLines = null;
+  }
+
+  for (const rawLine of String(markdown).split('\n')) {
+    const line = rawLine.trimEnd();
+    const quoteMatch = line.match(/^>\s?(.*)$/);
+    if (quoteMatch) {
+      if (!quoteLines) {
+        quoteLines = [];
+      }
+      if (quoteMatch[1]) {
+        quoteLines.push(quoteMatch[1]);
+      }
+      continue;
+    }
+    flushQuote();
+
+    if (!line) {
+      continue;
+    }
+    const headingMatch = line.match(/^(#{1,3})\s+(.*)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      bodyLines.push('<h' + level + '>' + renderInlineMarkdown(headingMatch[2]) + '</h' + level + '>');
+      continue;
+    }
+    if (line.startsWith('<link') || line.startsWith('<style')) {
+      headLines.push(line);
+      continue;
+    }
+    if (line.startsWith('<')) {
+      bodyLines.push(line);
+      continue;
+    }
+    const captionMatch = line.match(/^\*(.+)\*$/);
+    if (captionMatch && !line.startsWith('**')) {
+      bodyLines.push('<p class="caption"><em>' + renderInlineMarkdown(captionMatch[1]) + '</em></p>');
+      continue;
+    }
+    bodyLines.push('<p>' + renderInlineMarkdown(line) + '</p>');
+  }
+  flushQuote();
+
+  const sidebarLinks =
+    Array.isArray(manifest.sidebarLinks) && manifest.sidebarLinks.length > 0
+      ? manifest.sidebarLinks
+      : DEFAULT_SIDEBAR_LINKS;
+  const navLines = sidebarLinks.map(
+    (link) =>
+      '<a class="lbl ' +
+      escapeAttr(link.icon || 'vgi-data') +
+      (link.active ? ' rnd sec' : '') +
+      '" href="' +
+      escapeAttr(link.href || '#') +
+      '"' +
+      (link.title ? ' title="' + escapeAttr(link.title) + '"' : '') +
+      '>' +
+      escapeAttr(link.label || '') +
+      '</a>'
+  );
+//  const editorHref = escapeAttr((sidebarLinks[0] && sidebarLinks[0].href) || 'https://www.vulnogram.org/');
+
+  return [
+    '<!DOCTYPE html>',
+    '<html lang="en">',
+    '<head>',
+    '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+    '<title>' + title + '</title>',
+    ...headLines,
+    '<style>.doc-content{max-width:1100px;width:100%;box-sizing:border-box;margin:0 auto;padding:0 1.5rem 4rem;} .doc-content img{max-width:100%;height:auto;} blockquote{border-left:4px solid #d90429;background:rgba(217,4,41,0.06);margin:1rem 0;padding:0.5rem 1rem;border-radius:0 8px 8px 0;} .caption{margin-top:0.3rem;color:#475569;}</style>',
+    '</head>',
+    '<body id="body" class="cve">',
+    '<input id="sidebarToggle" type="checkbox" checked>',
+    '<div class="layout-grid">',
+    '<label class="sidebar-overlay" for="sidebarToggle"></label>',
+    '<aside class="sidebar">',
+    '<div class="sidebar-head pad"><label class="lbl vgi-logo" for="sidebarToggle">Vulnogram</label><label class="vgi-larrow" for="sidebarToggle"></label></div>',
+    '<nav class="sidebar-nav pad">',
+    ...navLines,
+    '<label class="sidebar-nav-fill" for="sidebarToggle" aria-label="Toggle sidebar"></label>',
+    '</nav>',
+    '<div class="sidebar-foot"></div>',
+    '</aside>',
+    '<main class="main-area">',
+    '<div class="doc-content">',
+    ...bodyLines,
+    '</div>',
+    '</main>',
+    '</div>',
+    '</body>',
+    '</html>',
+    ''
+  ].join('\n');
 }
 
 function selectScreenshots(manifest, onlyIds) {
@@ -1770,6 +1934,12 @@ async function main() {
   const markdown = buildMarkdown(manifest, mergedStatuses, generatedAt);
   const markdownChanged = await writeTextIfChanged(markdownPath, markdown);
 
+  const htmlPath = manifest.outputHtml
+    ? path.resolve(docsDir, manifest.outputHtml)
+    : markdownPath.replace(/\.md$/i, '.html');
+  const html = buildHtmlDocument(manifest, markdown);
+  const htmlChanged = await writeTextIfChanged(htmlPath, html);
+
   const nextState = buildState(manifest, mergedStatuses, priorState, generatedAt);
   await writeJson(statePath, nextState);
 
@@ -1783,6 +1953,7 @@ async function main() {
     summary.missing + ' missing'
   );
   console.log('Markdown', markdownChanged ? 'updated.' : 'unchanged.');
+  console.log('HTML (' + path.basename(htmlPath) + ')', htmlChanged ? 'updated.' : 'unchanged.');
 }
 
 main().catch((error) => {

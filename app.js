@@ -224,12 +224,13 @@ async function bootstrap() {
     const realtimeEnabled = !conf.realtime || conf.realtime.enabled !== false;
     const server = conf.httpsOptions ? https.createServer(conf.httpsOptions, app) : http.createServer(app);
 
+    app.locals.realtime = null;
     if (realtimeEnabled) {
         const { Server } = require('socket.io');
         const io = new Server(server, {
             maxHttpBufferSize: conf.realtime && conf.realtime.maxPatchBytes ? conf.realtime.maxPatchBytes * 2 : 1e6
         });
-        require('./lib/realtime')(io, {
+        app.locals.realtime = require('./lib/realtime')(io, {
             sessionMiddleware: sessionMiddleware,
             passport: passport,
             conf: conf,
@@ -239,6 +240,16 @@ async function bootstrap() {
 
     server.listen(conf.serverPort, conf.serverHost, function () {
         console.log('Server started at ' + (conf.httpsOptions ? 'https://' : 'http://') + conf.serverHost + ':' + conf.serverPort);
+    });
+
+    server.on('error', function (err) {
+        if (err.code === 'EADDRINUSE') {
+            console.error('Error: Port ' + conf.serverPort + ' is already in use on ' + conf.serverHost + '.\n' +
+                'Please stop the other process or set a different port via the VULNOGRAM_PORT environment variable.');
+            process.exit(1);
+        } else {
+            throw err;
+        }
     });
 }
 

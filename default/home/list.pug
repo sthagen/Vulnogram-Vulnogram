@@ -12,5 +12,6 @@ block facetBanner
             label.out.pad.bor.vgi-box(for="chartZ",style="text-align:right;") Large
         #charts.grd.pad
         script.
-            var charts = !{JSON.stringify(docs)};
+            // Escape < so a value containing a closing script tag cannot end this block.
+            var charts = !{JSON.stringify(docs).replace(/</g, '\\u003c')};
             plotCharts("charts", charts);

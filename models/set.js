@@ -210,6 +210,12 @@ function enrichFacetFromSchema(conf) {
         if (mappedType !== undefined) {
             facet.type = mappedType;
         }
+        // Date/time fields are stored as ISO strings; flag them so the list view
+        // renders them as friendly dates without changing the query type.
+        var formatValue = pickSchemaMetaValue(expandedNodes, function (n) { return n.format; });
+        if (formatValue === 'date' || formatValue === 'datetime' || formatValue === 'date-time') {
+            facet.isDate = true;
+        }
         var enumValue = pickSchemaMetaValue(expandedNodes, function (n) { return n.enum; });
         if (enumValue !== undefined) {
             facet.enum = enumValue;

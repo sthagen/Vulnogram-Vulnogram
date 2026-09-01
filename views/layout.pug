@@ -127,5 +127,15 @@ html
         //- Sub Content
         block subcontent
 
+        //- Common alert dialog used by showAlert() in public/js/vg-alert.js
+        dialog.bor.rndx.shd.pad2#alertDialog
+          center
+            form(onsubmit="event.preventDefault();return false;")
+                h2.vgi-alert#alertMessage
+                .gap#smallAlert
+                center.gap
+                    input#alertOk.btn.sfe(type="reset" onclick="document.getElementById('alertDialog').close();" value="OK")
+                    input#alertCancel.btn.red.alert-cancel(type="reset" onclick="document.getElementById('alertDialog').close();" value="Cancel")
+
         //- Footer
         include foot

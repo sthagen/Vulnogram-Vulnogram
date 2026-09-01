@@ -174,6 +174,9 @@ if (document.getElementById('remove')) {
                 if (response.status == 200) {
                     infoMsg.textContent = "Deleted ";
                     errMsg.textContent = "";
+                    // Deliberate discard: don't prompt about unsaved edits on
+                    // the way back to the list.
+                    editorUnloadWarningDisabled = true;
                     window.location = "./";
                 } else {
                     showAlert("Error " + response.statusText);
@@ -189,6 +192,20 @@ if (document.getElementById('save1')) {
     document.getElementById('save1').addEventListener('click', save);
 }
 
+function formatErrorPathLabel(path) {
+    var normalized = String(path || '').trim().replace(/^\^?root\.?/, '');
+    if (!normalized) {
+        return 'Document';
+    }
+    var parts = normalized.split('.');
+    for (var i = parts.length - 1; i >= 0; i--) {
+        if (!/^\d+$/.test(parts[i])) {
+            return parts[i];
+        }
+    }
+    return normalized;
+}
+
 function scroll2Err(x) {
     var path = x.getAttribute('e_path');
     mainTabGroup.focus(0);
@@ -197,6 +214,10 @@ function scroll2Err(x) {
             path = 'root.' + path;
         }
         var ee = docEditor.getEditor(path);
+        if (!ee || !ee.container || (ee.schema && ee.schema.options && ee.schema.options.hidden) || ee.format === 'hidden') {
+            var lastDot = path.lastIndexOf('.');
+            if (lastDot > 0) ee = docEditor.getEditor(path.substring(0, lastDot));
+        }
         if(ee && ee.container) {
             var stkH = document.getElementById("vgHead").offsetHeight;
             ee.container.style["scroll-margin-top"] = (stkH + 40) + "px";
@@ -206,27 +227,56 @@ function scroll2Err(x) {
     }
 }
 
+var _errHighlightedContainers = [];
+
+function getErrLabel(path) {
+    var tryPath = path;
+    var numericSuffix = '';
+    while (tryPath) {
+        var le = docEditor.getEditor(tryPath);
+        if (le) {
+            var lopts = le.schema && le.schema.options;
+            if (!(lopts && lopts.hidden) && le.format !== 'hidden') {
+                var lbl = (le.schema && le.schema.title) ? le.schema.title.trim() : '';
+                if (lbl && /^\d+$/.test(lbl)) {
+                    if (!numericSuffix) numericSuffix = lbl;
+                } else if (lbl) {
+                    return numericSuffix ? lbl + ' ' + numericSuffix : lbl;
+                }
+            }
+        }
+        var lastDot = tryPath.lastIndexOf('.');
+        if (lastDot < 0) break;
+        tryPath = tryPath.substring(0, lastDot);
+    }
+    return null;
+}
+
 function showJSONerrors(errors) {
+    _errHighlightedContainers.forEach(function(c) { c.style.boxShadow = ''; c.style.border = ''; });
+    _errHighlightedContainers = [];
     errList.textContent="";
     for (var i = 0; i < errors.length; i++) {
         var e = errors[i];
-        var showLabel = undefined;
+        var showLabel = getErrLabel(e.path);
         var ee = docEditor.getEditor(e.path);
         if (ee) {
-            if(ee.header && ee.header.innerText) {
-                showLabel = ee.header.innerText;
-            }
-            if(!showLabel && !(ee.original_schema === undefined) && !(ee.original_schema.title === undefined)) {
-                showLabel = ee.original_schema.title
-            } else {
-                showLabel = ee.getHeaderText();
+            var smEditor = docEditor.getEditor(e.path + '.supportingMedia.0.value');
+            if (smEditor && smEditor.control) {
+                if (ee.container) {
+                    ee.container.style.boxShadow = '';
+                    ee.container.style.border = '';
+                }
+                smEditor.control.style.boxShadow = "rgba(252, 114, 114, 0.33) 0px 0px 0px 2px";
+                smEditor.control.style.border = "1px solid coral";
+                _errHighlightedContainers.push(smEditor.control);
             }
         }
         var a = document.createElement('a');
         a.setAttribute('class', 'rqd')
         a.setAttribute('e_path', e.path);
         a.setAttribute('onclick', 'scroll2Err(this)');
-        a.textContent = (showLabel && showLabel.trim() ? showLabel : e.path.replace('^root.','')) + ": " + e.message;
+        a.textContent = (showLabel && showLabel.trim() ? showLabel : formatErrorPathLabel(e.path)) + ": " + e.message;
         errList.appendChild(a);
         errList.appendChild(document.createElement('br'))
     }

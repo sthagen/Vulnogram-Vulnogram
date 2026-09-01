@@ -104,7 +104,16 @@ getPR: function(cve) {
  * @returns {string} A formatted, user-friendly date string.
  */
 formatFriendlyDate: function (isoString) {
+  if (isoString === "" || isoString === null || isoString === 0) {
+    return "-";
+  }
+
   const date = new Date(isoString);
+
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
   const now = new Date();
 
   // Create date objects for comparison, stripping out the time part.
@@ -235,6 +244,29 @@ getDocuments: async function(schemaName, ids, paths) {
     fileSize : function(a,b,c,d,e){
         return (b=Math,c=b.log,d=1024,e=c(a)/c(d)|0,a/b.pow(d,e)).toFixed(2)
             +' '+(e?'KMGTPEZY'[--e]+'B':'Bytes')
+    },
+    diffEdgeClass: function(op, side) {
+        if (op == 'add')     return side == 'next'    ? 'diff-add'   : '';
+        if (op == 'remove')  return side == 'current' ? 'diff-del'   : '';
+        if (op == 'replace') return side == 'current' ? 'diff-chg-l' : 'diff-chg-r';
+        return '';
+    },
+    cvssIcons: {
+        attackVector:              { NETWORK: 'cvss-net', ADJACENT_NETWORK: 'cvss-adj', ADJACENT: 'cvss-adj', LOCAL: 'cvss-user', PHYSICAL: 'cvss-physical' },
+        attackComplexity:          { HIGH: 'rocket', LOW: 'paper-plane' },
+        attackRequirements:        { PRESENT: 'cvss-required', NONE: 'cvss-direct' },
+        privilegesRequired:        { HIGH: 'king', LOW: 'pawn', NONE: 'thief' },
+        userInteraction:           { REQUIRED: 'cvss-ui', ACTIVE: 'alert', PASSIVE: 'eye-close', NONE: 'cvss-direct' },
+        scope:                     { UNCHANGED: 'cvss-direct', CHANGED: 'cvss-scope-change' },
+        confidentialityImpact:     { HIGH: 'eye', LOW: 'eye-half', NONE: 'eye-close' },
+        integrityImpact:           { HIGH: 'box-high', LOW: 'box-low', NONE: 'box' },
+        availabilityImpact:        { HIGH: 'signal-1', LOW: 'signal-2', NONE: 'signal' },
+        vulnConfidentialityImpact: { HIGH: 'eye', LOW: 'eye-half', NONE: 'eye-close' },
+        subConfidentialityImpact:  { HIGH: 'eye', LOW: 'eye-half', NONE: 'eye-close' },
+        vulnIntegrityImpact:       { HIGH: 'box-high', LOW: 'box-low', NONE: 'box' },
+        subIntegrityImpact:        { HIGH: 'box-high', LOW: 'box-low', NONE: 'box' },
+        vulnAvailabilityImpact:    { HIGH: 'signal-1', LOW: 'signal-2', NONE: 'signal' },
+        subAvailabilityImpact:     { HIGH: 'signal-1', LOW: 'signal-2', NONE: 'signal' }
     }
 };
 if(typeof module !== 'undefined') {
@@ -554,4 +586,19 @@ function copyToClipboard(text){
         console.error('Failed to copy text: ', err);
     });
     return false;
+}
+
+/* Schema link action shared by every section that scores CVSS v4 (cve5, cvss4),
+   so it lives here beside cvssjs and copyToClipboard rather than in one section.
+   Section-specific actions belong in default/<section>/script.js.
+   Reading the vector on click, rather than baking it into an href at build time,
+   keeps it current when metrics change after the link is created. */
+// util.js is required server-side by routes/doc.js and routes/onedoc.js, where
+// `window` is undefined, so guard the browser-only registration (mirrors the
+// `typeof module` guard above for module.exports).
+if (typeof window !== 'undefined') {
+    window.vgLinkActions = window.vgLinkActions || {};
+    window.vgLinkActions.copyCvssVector = function (ctx) {
+        copyToClipboard(cvssjs.vector4(ctx.editor.getWatchedFieldValues() || {}));
+    };
 }
