@@ -16,3 +16,4 @@ docs/.screenshot-state.json
 test-results/.last-run.json
 docs/.screenshot-state.json
 docs/.screenshot-state.json
+.claude/*

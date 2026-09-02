@@ -655,14 +655,16 @@
           "place": "header",
           "target": "_self",
           "class": "vgi-copy",
-          "href": "'javascript:copyToClipboard(\"' +cvssjs.vector4(context) + '\");void(0);'",
+          "href": "'#'",
+          "action": "copyCvssVector",
           "title": "Copy Vector",
           "rel": "' Copy'"
         },{
           "place": "header",
           "target": "_self",
           "class": "vgi-in",
-          "href": "'javascript:navigator.clipboard.readText().then(t => {loadVector(t, false);return null})'",
+          "href": "'#'",
+          "action": "loadVectorFromClipboard",
           "title": "Paste CVSS Vector text",
           "rel": "' Paste Vector'"
         }

@@ -29,18 +29,19 @@
           "type": "string",
           "format": "radio",
           "enum": [
-            "new",
-            "open",
             "draft",
-            "review",
-            "waiting",
             "pending",
-            "closed"
+            "done"
           ],
-          "default": "new",
+          "default": "draft",
           "options": {
             "grid_columns": 12,
-            "class": "vgi-knob"
+            "class": "vgi-knob",
+            "icons": {
+              "draft": "text",
+              "pending": "wait",
+              "done": "closed"
+            }
           }
         },
         "type": {
@@ -58,7 +59,16 @@
           "default": "unsure",
           "options": {
             "grid_columns": 12,
-            "class": "vgi-bucket"
+            "class": "vgi-bucket",
+            "icons": {
+              "unsure": "what",
+              "no-vuln": "safe",
+              "advisory": "alert",
+              "no-advisory": "no",
+              "doc": "text",
+              "misc": "misc",
+              "duplicate": "ext"
+            }
           }
         },
         "publish": {
@@ -71,21 +81,21 @@
               "type": "string",
               "template": "(context.d ? context.d.substr(0,7) : '')",
               "watch": {
-                "d": "root.containers.cna.providerMetadata.datePublic"
+                "d": "root.containers.cna.datePublic"
               }
             },
             "year": {
               "type": "string",
               "template": "(context.d ? context.d.substr(0,4) : '')",
               "watch": {
-                "d": "root.containers.cna.providerMetadata.datePublic"
+                "d": "root.containers.cna.datePublic"
               }
             },
             "month": {
               "type": "string",
               "template": "(context.d ? context.d.substr(5,2) : '')",
               "watch": {
-                "d": "root.containers.cna.providerMetadata.datePublic"
+                "d": "root.containers.cna.datePublic"
               }
             }
           }
@@ -903,7 +913,7 @@
           "links": [
             {
               "class": "lbl vgi-ext",
-              "href": "'https://www.cve.org/CVERecord?id=' + context.self",
+              "href": "'https://vulnogram.org/seaview/?' + context.self",
               "title": "'CVE.org Entry",
               "rel": "'cve.org'"
             }
@@ -1114,7 +1124,8 @@
               "class": "btn sfe indent vgi-magic",
               "style": "",
               "target": false,
-              "href": "'javascript:autoText()'",
+              "href": "'#'",
+              "action": "autoText",
               "title": "Auto Generate CVE description based on other input",
               "rel": "'Auto Generate'"
             }
@@ -1178,7 +1189,7 @@
           "properties": {
             "engine": {
               "type": "string",
-              "default": "Vulnogram 1.0.1"
+              "default": "Vulnogram 1.0.5"
             }
           },
           "options": {
@@ -1246,7 +1257,7 @@
           "properties": {
             "engine": {
               "type": "string",
-              "default": "Vulnogram 1.0.1"
+              "default": "Vulnogram 1.0.5"
             }
           },
           "options": {
@@ -1288,7 +1299,7 @@
           "target": false,
           "if": "context.self && context.self.providerMetadata && (context.self.providerMetadata.orgId === '00000000-0000-4000-9000-000000000000' || (csCache && csCache.orgInfo && context.self.providerMetadata.orgId === csCache.orgInfo.UUID))",
           "href": "'#'",
-          "onclick": "'postADP(' + JSON.stringify(context.self && context.self.providerMetadata ? context.self.providerMetadata.orgId : null) + ', this); return false;'",
+          "action": "postADP",
           "title": "Post this ADP information ",
           "rel": "'Post this information'"
         }
@@ -2842,7 +2853,8 @@
                     "place": "header",
                     "target": "_self",
                     "class": "indent vgi-copy",
-                    "href": "'javascript:copyToClipboard(\"' + cvssjs.vector4(context) + '\");void(0);'",
+                    "href": "'#'",
+                    "action": "copyCvssVector",
                     "title": "Copy Vector",
                     "rel": "' Copy'"
                   },
@@ -2850,8 +2862,8 @@
                     "place": "header",
                     "target": "_self",
                     "class": "indent vgi-in",
-                    "href": "'javascript:void(0);'",
-                    "onclick": "'return pasteCvssVectorFromClipboard(this);'",
+                    "href": "'#'",
+                    "action": "pasteCvssVector",
                     "title": "Paste CVSS Vector text",
                     "rel": "' Paste'"
                   }
@@ -3866,7 +3878,8 @@
           "id": "post2",
           "style": "",
           "target": false,
-          "href": "'javascript:cvePost()'",
+          "href": "'#'",
+          "action": "cvePost",
           "title": "'Publish this record to CVE.org'",
           "rel": "'Publish CVE'"
         },
@@ -3875,9 +3888,20 @@
           "class": "lbl gap2 tred fbn vgi-no flr",
           "style": "",
           "target": false,
-          "href": "'javascript:rejectRecord()'",
+          "href": "'#'",
+          "action": "rejectRecord",
           "title": "'Reject this CVE ID'",
           "rel": "'Reject this ID'"
+        },
+        {
+          "place": "container",
+          "class": "lbl gap2 fbn vgi-forward flr",
+          "style": "",
+          "target": false,
+          "href": "'#'",
+          "action": "transferRecord",
+          "title": "'Transfer this CVE ID to another CNA'",
+          "rel": "'Transfer this CVE'"
         }
       ],
       "additionalProperties": false
@@ -3925,7 +3949,8 @@
           "class": "btn sfe vgi-put gap2",
           "style": "",
           "target": false,
-          "href": "'javascript:cvePost()'",
+          "href": "'#'",
+          "action": "cvePost",
           "title": "'Publish this record to CVE.org'",
           "rel": "'Publish CVE'"
         }

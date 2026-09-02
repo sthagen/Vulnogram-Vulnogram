@@ -36,39 +36,24 @@
         constructor(serviceUri = 'https://cveawg.mitre.org/api', swPath = 'sw.js') {
             //console.log('called constructer');
             this._middleware = new CveServicesMiddleware(serviceUri, swPath);
-            //this._request = null;
-            //this._channels = [];
-        }
+}
 
         // Session mgmt
 
-        login(user, org, key) {
+        login(user, org, key, rememberMe) {
             //console.log('called login');
-            return this._middleware.setCredentials({ user, org, key });
+            return this._middleware.setCredentials({ user, org, key, rememberMe });
         }
 
-        logout() {
+        logout(silent) {
             //console.log("Called logout");
-            return this._middleware.destroy();
-        }
-
-        active() {
-            return this._middleware ? true : false;
+            // silent: discard credentials without broadcasting a logout to
+            // other tabs (used when cleaning up after a failed login).
+            return this._middleware.destroy(silent);
         }
 
         getSession() {
             return this._middleware.getSession();
-        }
-
-        // Inter-instance communication.
-
-        on(chanName) {
-            return new Promise(resolve => {
-                let bc = new BroadcastChannel(chanName);
-                bc.onmessage = msg => {
-                    resolve(msg.data);
-                };
-            });
         }
 
         // API methods
@@ -79,47 +64,6 @@
 
         reserveCveIds(args) {
             return this._middleware.post('cve-id', args);
-        }
-
-        reserveCveId(year = new Date().getFullYear()) {
-            return this._middleware.orgName
-                       .then(orgName => {
-                           let args = {
-                               amount: 1,
-                               cve_year: year,
-                               short_name: orgName,
-                           };
-
-                           return this.reserveCveIds(args);
-                       });
-        }
-
-        reserveSeqCveIds(n = 1, year = new Date().getFullYear()) {
-            return this._middleware.orgName
-                .then(orgName => {
-                    let args = {
-                        amount: n,
-                        cve_year: year,
-                        short_name: orgName,
-                        batch_type: 'sequential',
-                    };
-
-                    return this.reserveCveIds(args);
-                });
-        }
-
-        reserveNonSeqCveIds(n = 1, year = new Date().getFullYear()) {
-            return this._middleware.orgName
-                .then(orgName => {
-                    let args = {
-                        amount: n,
-                        cve_year: year,
-                        short_name: orgName,
-                        batch_type: 'nonsequential',
-                    };
-
-                    return this.reserveCveIds(args);
-                });
         }
 
         getCveId(id) {
@@ -135,26 +79,8 @@
             return this._middleware.put('cve-id/'.concat(id), record);
         }
 
-        getCves(opts) {
-            let query;
-
-            if (opts) {
-                query = {};
-                if (opts.hasOwnProperty('state'))
-                    query['cveState'] = opts.state;
-                if(opts.hasOwnProperty('modBefore'))
-                    query['cveRecordFilteredTimeModifiedLt'] = opts.modBefore;
-                if(opts.hasOwnProperty('modAfter'))
-                    query['cveRecordFilteredTimeModifiedGt'] = opts.modAfter;
-                if(opts.hasOwnProperty('count'))
-                    query['countOnly'] = 1;
-                if (opts.hasOwnProperty('assignerShort'))
-                    query['assignerShortName'] = opts.assignerShort;
-                if (opts.hasOwnProperty('assigner'))
-                    query['assigner'] = opts.assigner;
-            }
-
-            return this._middleware.get('cve', query);
+        transferCveId(id, newOrg) {
+            return this._middleware.put('cve-id/'.concat(id), { org: newOrg });
         }
 
         getCve(id) {
@@ -189,12 +115,6 @@
             return this._middleware.orgName
                 .then(orgName =>
                     this._middleware.get('org/'.concat(orgName)));
-        }
-
-        updateOrgInfo(orgInfo) {
-            return this._middleware.orgName
-                .then(orgName =>
-                    this._middleware.get('org/'.concat(orgName), orgInfo));
         }
 
         createOrgUser(userInfo) {
@@ -249,15 +169,33 @@
             let serviceUri = this.serviceUri;
 
             let initWorker = (worker) => {
-                let init_msg = { type: 'init',
-                                serviceUri };
-
-                this.simpleMessage(worker, init_msg);
+                this.simpleMessage(worker, { type: 'init', serviceUri });
             };
 
-            if (this.registration) {
+            if (this.registration && this.registration.active) {
+                if (!this._initialized) {
+                    this._initialized = true;
+                }
+                // Always send init so a browser-terminated+restarted SW gets
+                // storage.serviceUri restored (SW restart clears in-memory state
+                // but leaves registration.active non-null with no browser event).
                 initWorker(this.registration.active);
                 return Promise.resolve(this.registration.active);
+            }
+
+            if (this.registration && !this.registration.active) {
+                const pending = this.registration.installing || this.registration.waiting;
+                if (pending) {
+                    return new Promise(resolve => {
+                        pending.addEventListener('statechange', (e) => {
+                            if (e.target.state === 'activated') {
+                                this._initialized = true;
+                                initWorker(e.target);
+                                resolve(e.target);
+                            }
+                        });
+                    });
+                }
             }
 
             return navigator.serviceWorker.register(this.swPath)
@@ -270,12 +208,14 @@
 
                             worker.addEventListener('statechange', (e) => {
                                 if (e.target.state == 'activated') {
+                                    this._initialized = true;
                                     initWorker(e.target);
                                     resolve(e.target);
                                 }
                             });
                         });
                     } else {
+                        this._initialized = true;
                         initWorker(reg.active);
                         return reg.active;
                     }
@@ -283,18 +223,17 @@
         }
 
         simpleMessage(worker, msg) {
-            return new Promise(resolve => {
+            return new Promise((resolve, reject) => {
                 let channel = new MessageChannel();
 
                 channel.port1.onmessage = (msg) => {
-    		    if('debug' in msg)
+                    if ('debug' in msg)
                         console.log(msg);
                     resolve(msg.data);
                 };
+                channel.port1.onmessageerror = reject;
 
                 worker.postMessage(msg, [channel.port2]);
-            }, reject => {
-                worker.onmessageerror = reject;
             });
         }
 
@@ -371,10 +310,7 @@
             return this.send({ type: 'getSession' });
         }
 
-        destroy() {
-            // Broadcast logout event
-            let bc = new BroadcastChannel('logout');
-            bc.postMessage({'error': 'LOGOUT', message: 'The user has logged out'});
+        destroy(silent) {
             let unregisterCurrent = () => {
                 let reg = this.registration;
                 if (!reg) {
@@ -384,12 +320,15 @@
                     .catch(() => false)
                     .then(() => {
                         this.registration = undefined;
+                        this._initialized = false;
                         return true;
                     });
             };
 
             // Ensure destroy reaches the worker before unregistration.
-            return this.send({type: 'destroy'})
+            // destroySession() in the SW broadcasts the logout event unless
+            // `silent` asks for a quiet credential cleanup.
+            return this.send({type: 'destroy', silent: !!silent})
                 .catch(() => false)
                 .then(() => unregisterCurrent())
                 .then(() => true)

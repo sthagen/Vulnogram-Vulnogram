@@ -13,36 +13,6 @@ mixin para(t, hypertext)
                     else
                         p=line
 
-mixin mpara(l, hypertext)
-    if l
-        each d in l
-            if d.value
-                +para(d.value, hypertext)
-mixin aggpara(l)
-    if l
-        ul
-            each k, v in l
-                li
-                    b=k.join(', ')
-                    p
-                        +para(v)
-
-mixin linklist(l, url)
-    each v, i in l
-        if(i < l.length-2)
-            if(url)
-                a(href=url+v)=v
-            else
-                = v
-            | , 
-        else
-            if(i == l.length - 1 && i > 0)
-                |  and 
-            if(url)
-                a(href=url+v)=v
-            else
-                =v
-
 mixin CVSS(value)
     if value && value.baseScore !== undefined && value.baseScore !== null && value.baseScore !== ''
         - var baseScoreNum = Number(value.baseScore)

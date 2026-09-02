@@ -40,6 +40,10 @@
     font-weight: bold;
 }
 
+.chart .blabel {
+    font-size: 1.3em;
+}
+
 .chart .sum {
     font-weight: 200;
     font-family: "helvetica neue", helvetica, arial, sans-serif;

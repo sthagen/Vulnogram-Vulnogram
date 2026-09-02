@@ -4,6 +4,20 @@ JSONEditor.AbstractEditor.prototype.showStar = function () {
     return this.isRequired() && !(this.schema.readOnly || this.schema.readonly || this.schema.template)
 }
 
+/* Registry of named click handlers for schema links. A link declares
+   "action": "<name>" instead of a javascript: href or an inline onclick, so the
+   button still works under a CSP that lacks 'unsafe-inline'. Only registered
+   names can be invoked, so a schema - including a remote one - cannot name
+   arbitrary code.
+
+   Handlers belong to whichever section owns them and are registered from
+   default/<section>/script.js; nothing section-specific goes here. Section
+   scripts are inlined ahead of jsoneditor.min.js, so this is a plain global
+   rather than a JSONEditor property: either side may run first, so always
+   extend the object instead of replacing it.
+   A handler is called with {editor, element, event}. */
+window.vgLinkActions = window.vgLinkActions || {};
+
 JSONEditor.AbstractEditor.prototype.addLinks = function () {
     /* Add links */
     if (!this.no_link_holder) {
@@ -46,21 +60,28 @@ JSONEditor.AbstractEditor.prototype.addLinks = function () {
             }
             if(link.target === false) {
                 h.removeAttribute('target')
-            } else {
+            } else if (link.target !== undefined) {
+                /* Only override when the schema asks for a target. Without this
+                   guard an absent target set the literal string "undefined",
+                   clobbering the target="_blank" that getLink() already applied. */
                 h.setAttribute('target', link.target)
             }
-            if(link.onclick) {
-                var onClickHandler = link.onclick;
-                if (typeof onClickHandler === 'string') {
-                    try {
-                        var onClickTemplate = this.jsoneditor.compileTemplate(onClickHandler, this.template_engine);
-                        this.refreshWatchedFieldValues();
-                        onClickHandler = onClickTemplate(this.getWatchedFieldValues() || {});
-                    } catch (e) {
-                        onClickHandler = link.onclick;
+            /* Schema "onclick" is intentionally not supported: it would let a
+               schema (including a remote one) inject arbitrary code, and the
+               attribute is dead under CSP anyway. Use "action" instead. */
+            if(link.action) {
+                /* let, not var: each iteration needs its own binding for the closure */
+                let actionName = link.action;
+                let actionEditor = this;
+                h.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    var handler = window.vgLinkActions[actionName];
+                    if (typeof handler !== 'function') {
+                        console.error('Unregistered schema link action: ' + actionName);
+                        return;
                     }
-                }
-                h.setAttribute('onclick', onClickHandler);
+                    handler({ editor: actionEditor, element: this, event: event });
+                });
             }
             if(link.place == "container" && this.container) {
                 this.container.appendChild(h);
@@ -531,6 +552,16 @@ JSONEditor.defaults.editors.dateTime = class dateTime extends JSONEditor.default
         super.build();
         this.input.className = "txt";
         this.input.setAttribute("tz", localTZ);
+        // Firefox datetime-local won't emit a value until both date and time
+        // sub-fields are filled. Pre-fill with current time on focus so the
+        // user only needs to pick a date and the time is already valid.
+        this.input.addEventListener('focus', () => {
+            if (!this.input.value) {
+                var now = new Date();
+                var local = new Date(now.getTime() - (now.getTimezoneOffset() * 60000));
+                this.input.value = local.toJSON().slice(0, 16);
+            }
+        });
     }
 };
 
@@ -877,20 +908,33 @@ JSONEditor.defaults.editors.simplehtml = class simplehtml extends JSONEditor.def
     }
     showValidationErrors(errs) {
         var self = this;
+        var richTextPathSuffix = '.supportingMedia.0.value';
 
         if(this.jsoneditor.options.show_errors === "always") {}
         else if(!this.is_dirty && this.previous_error_setting===this.jsoneditor.options.show_errors) return;
         
         this.previous_error_setting = this.jsoneditor.options.show_errors;
     
+        var relatedPaths = {};
+        relatedPaths[self.path] = true;
+        if (self.path && self.path.slice(-richTextPathSuffix.length) === richTextPathSuffix) {
+            var descriptionPath = self.path.slice(0, -richTextPathSuffix.length);
+            relatedPaths[descriptionPath] = true;
+            relatedPaths[descriptionPath + '.value'] = true;
+        }
+
         var messages = [];
         errs.forEach(i => {
-            if(i.path === self.path) {
+            if(i.path && relatedPaths[i.path] && messages.indexOf(i.message) === -1) {
                 messages.push(i.message);
             }
-        });    
+        });
         if(messages.length) {
-          this.theme.addInputError(this.control, messages.join('. ')+'.');
+          var messageText = messages.join('. ');
+          if (messageText[messageText.length - 1] !== '.') {
+              messageText += '.';
+          }
+          this.theme.addInputError(this.control, messageText);
         }
         else {
           this.theme.removeInputError(this.control);

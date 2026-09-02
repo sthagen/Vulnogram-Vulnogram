@@ -33,6 +33,9 @@ var starting_value = {};
 var sourceEditor;
 var draftsBaseline = null;
 var draftsFeatureEnabled = (typeof draftsEnabled === 'boolean') ? draftsEnabled : true;
+// Set before a deliberate navigation (post-save redirect, delete) so the
+// unsaved-changes beforeunload prompt doesn't fire on it.
+var editorUnloadWarningDisabled = false;
 
 export {
     infoMsg,
@@ -44,5 +47,6 @@ export {
     sourceEditor,
     draftsBaseline,
     draftsFeatureEnabled,
+    editorUnloadWarningDisabled,
     feedback
 };

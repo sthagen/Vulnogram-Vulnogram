@@ -203,7 +203,9 @@ function barChart(a) {
         a.yAxis = d3.svg.axis()
             .scale(a.y)
             .orient("left")
-            .tickFormat(d3.format(".2s"));
+            .tickFormat(function (d) {
+                return d % 1 === 0 ? d3.format("d")(d) : '';
+            });
     }
 
 
@@ -233,7 +235,7 @@ function barChart(a) {
                 delete keys.t;
                 var y = 0;
                 var skey = Object.keys(d.items[0])[0];
-                d.items.sort(function (a, b) { return a[skey] > b[skey] });
+                d.items.sort(function (a, b) { return d3.descending(a[skey], b[skey]) });
                 for (item of d.items) {
                     item.y = y;
                     y = y + item.t;
@@ -279,8 +281,9 @@ function barChart(a) {
                 return (a.y(d.t) - 2)
             })
             .attr("x", function (d) {
-                return a.x(d._id);
+                return a.x(d._id) + a.x.rangeBand() / 2;
             })
+            .attr("text-anchor", "middle")
             .attr("class", "total")
             ;
 
@@ -348,10 +351,12 @@ function barChart(a) {
                 return '';
             })
             .attr("y", function (i) {
-                return a.y(i.y) - 2;
-                //a.y(i.y)+a.y(i.t)+10;
+                return (a.y(i.y) + a.y(i.y + i.t)) / 2;
             })
-            .attr("x", 2);
+            .attr("x", a.x.rangeBand() / 2)
+            .attr("text-anchor", "middle")
+            .attr("dominant-baseline", "central")
+            .attr("class", "blabel");
     });
 };
 

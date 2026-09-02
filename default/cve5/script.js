@@ -29,13 +29,23 @@ async function loadExamples(field, orgName) {
     return data;
 }
 
-function hidepopups() {
-    document.getElementById("userListPopup").open = false;
-    document.getElementById("userStatsPopup").open = false;
+async function transferRecord() {
+    var id = getDocID();
+    if (!id) {
+        if (typeof showAlert === 'function') showAlert('No CVE loaded', 'Load a valid CVE record before transferring.');
+        return;
+    }
+    var el = document.createElement('a');
+    el.setAttribute('data', id);
+    await cveTransfer(el, null);
 }
 
 async function rejectRecord() {
     var id = getDocID();
+    if (!id) {
+        if (typeof showAlert === 'function') showAlert('No CVE loaded', 'Load a valid CVE record before rejecting.');
+        return;
+    }
     if (window.confirm('Do you want to reject ' + id + '? All vulnerability details will be removed.')) {
         loadJSON({
             cveMetadata: {
@@ -143,13 +153,12 @@ var additionalTabs = {
             }
         }
     },
-    mitreTab: {
-        title: 'MITRE-Preview',
-        setValue: function (j) {
-            document.getElementById("mitreweb").innerHTML = pugRender({
-                renderTemplate: 'mitre',
-                doc: j
-            });
+    changesTab: {
+        title: 'Changes',
+        setValue: async function (j) {
+            if (typeof cveRenderPublishChanges === 'function') {
+                await cveRenderPublishChanges(j);
+            }
         }
     }
 }
@@ -315,6 +324,7 @@ function htmltoText(html) {
         text = text.replace(/<\/li[^>]*?>/gi, "\n");
         text = text.replace(/<li.*?>/gi, "  *  ");
         text = text.replace(/<\/ul[^>]*?>/gi, "\n\n");
+        text = text.replace(/<p[^>]*?>/gi, "\n\n");
         text = text.replace(/<\/p[^>]*?>/gi, "\n\n");
         text = text.replace(/<br\s*[\/]?>/gi, "\n");
         text = text.replace(/<[^>]+>/gi, "");
@@ -397,8 +407,9 @@ async function autoText(event) {
         text = text.trim().replaceAll(/\s+/g, ' ');
         hE = await docEditor.getEditor('root.containers.cna.descriptions.0.supportingMedia.0.value');
 
-        // Capitolize sentances.
-        var rg = /(^\w{1}|\.\s*\w{1})/gi;
+        // Capitalize sentences: only after a period followed by whitespace,
+        // so file names like index.php keep their case.
+        var rg = /(^\w|\.\s+\w)/g;
         text = text.replace(rg, function (toReplace) {
             return toReplace.toUpperCase();
         });
@@ -888,11 +899,14 @@ async function clearCPE() {
         cpeEditor.setValue([],'',true);
         return;
 }
-async function setCPEstatus() {
-    document.getElementById('autoCPEChk').checked = (localStorage.getItem('autoCPEChk') === 'true');
-}
 async function autoCPE() {
-    let newState = document.getElementById('autoCPEChk').checked;
+    /* Reachable without the CPE box on screen - the Aliases dialog's Close
+       button calls this - so the checkbox may not exist. */
+    var chk = document.getElementById('autoCPEChk');
+    if (!chk) {
+        return;
+    }
+    let newState = chk.checked;
     localStorage.setItem('autoCPEChk', newState);
     if (newState) {
         //docEditor.getEditor('root.containers.cna.cpeApplicability').watch('cntr.affected');
@@ -1305,3 +1319,35 @@ function fillCvssMetrics(cvss, options) {
   if (isMissing(cvss.version)) cvss.version = version;
   return cvss;
 }
+
+/* Click handlers for the schema links in cve5.schema.json that declare
+   "action": "<name>". These are cve5-specific, so they live here rather than in
+   the shared editor bundle.
+
+   Extend window.vgLinkActions instead of assigning it: this file is inlined
+   ahead of jsoneditor.min.js and js/vg-editor.js, so it usually creates the
+   object first. Targets are resolved when the handler runs, which is why
+   cvePost/postADP can live in portal.js and load later.
+   Each handler gets {editor, element, event}; the dispatcher in src/js/edit/ui.js
+   has already called preventDefault(). */
+window.vgLinkActions = Object.assign(window.vgLinkActions || {}, {
+    autoText: function () {
+        autoText();
+    },
+    cvePost: function () {
+        cvePost();
+    },
+    rejectRecord: function () {
+        rejectRecord();
+    },
+    transferRecord: function () {
+        transferRecord();
+    },
+    pasteCvssVector: function (ctx) {
+        pasteCvssVectorFromClipboard(ctx.element);
+    },
+    postADP: function (ctx) {
+        var value = ctx.editor.getValue();
+        postADP(value && value.providerMetadata ? value.providerMetadata.orgId : null, ctx.element);
+    }
+});

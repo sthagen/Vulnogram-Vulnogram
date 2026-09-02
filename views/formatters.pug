@@ -1,3 +1,17 @@
+//- Renders an anchor only for http(s)/ftp(s) URLs — the schemes the CVE
+//- schema itself permits for reference and repo URLs. Any other scheme
+//- (javascript:, data:, vbscript:, …) falls back to inert text, since these
+//- URLs come from document data that may be authored by another org.
+mixin safeLink(url)
+    - var su ; try { var pu = (new URL(url)); if (pu.protocol === 'http:' || pu.protocol === 'https:' || pu.protocol === 'ftp:' || pu.protocol === 'ftps:') su = pu; } catch(e){};
+    if su
+        a(href=su.href)&attributes(attributes)
+            block
+    else
+        - var sattrs = {}; for (var k in attributes) { if (k !== 'target' && k !== 'rel' && k !== 'href' && k !== 'title') { sattrs[k] = attributes[k]; } }
+        span(title=url)&attributes(sattrs)
+            block
+
 mixin compactNumber(value)
     if value === undefined || value === null || value === ''
         span.tgrey -

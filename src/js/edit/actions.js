@@ -67,14 +67,20 @@ function save(e, onSuccess) {
         return;
     }
     infoMsg.textContent = "Saving...";
+    var saveHeaders = {
+        'Accept': 'application/json, text/plain, */*',
+        'Content-Type': 'application/json',
+        'CSRF-Token': csrfToken
+    };
+    // Identify this browser's realtime session so the server-side broadcast of
+    // this save skips our own socket (we resync our shadow directly below).
+    if (window.realtimeEnabled && typeof realtimeClientId === 'string') {
+        saveHeaders['X-Realtime-Client-Id'] = realtimeClientId;
+    }
     fetch(postUrl ? postUrl : '', {
             method: 'POST',
             credentials: 'include',
-            headers: {
-                'Accept': 'application/json, text/plain, */*',
-                'Content-Type': 'application/json',
-                'CSRF-Token': csrfToken
-            },
+            headers: saveHeaders,
             redirect: 'error',
             body: JSON.stringify(j),
         })
@@ -86,6 +92,9 @@ function save(e, onSuccess) {
         })
         .then(function (res) {
             if (res.type == "go") {
+                // The document just persisted under a (possibly new) ID; this
+                // redirect must not trip the unsaved-changes prompt.
+                editorUnloadWarningDisabled = true;
                 window.location.href = res.to;
             } else if (res.type == "err") {
                 showAlert(res.msg);
@@ -99,6 +108,13 @@ function save(e, onSuccess) {
                 if (draftsCache && draftsCache.remove) {
                     draftsCache.cancelSave();
                     draftsCache.remove(getDocID());
+                }
+                // This HTTP save bumped the persisted __v out from under our
+                // realtime shadow. Rejoin to adopt the new version so the next
+                // live edit doesn't trip a spurious VERSION_MISMATCH.
+                if (window.realtimeEnabled && typeof realtimeJoinIfReady === 'function') {
+                    realtimeState.joined = false;
+                    realtimeJoinIfReady();
                 }
                 getChanges(getDocID());
                 if (onSuccess)
@@ -211,38 +227,62 @@ function downloadHtml(title, element, link) {
     link.download = file.name;
 }
 
-function showAlert(msg, smallmsg, timer, showCancel) {
-    errMsg.textContent="";
-    infoMsg.textContent="";
-    if (showCancel) {
-        document.getElementById("alertCancel").style.display = "inline-block";
-    } else {
-        var temp1 = document.getElementById("alertOk");
-        temp1.setAttribute("onclick", "document.getElementById('alertDialog').close();");
-        document.getElementById("alertCancel").style.display = "none";
+// showAlert is provided globally by public/js/vg-alert.js (loaded on every
+// page from views/head.pug) so non-editor pages can use it too.
+
+// True when the editor holds changes not persisted on the server. With
+// realtime sync joined, the persisted state is the last server-acked shadow;
+// otherwise it is the drafts baseline (set on load and after a successful
+// HTTP save).
+function editorHasUnsavedChanges() {
+    var doc = null;
+    try {
+        doc = typeof realtimeGetCurrentDoc === 'function' ? realtimeGetCurrentDoc() : getDraftDocValue();
+    } catch (e) {
+        doc = null;
     }
-    document.getElementById("alertMessage").innerText = msg;
-    if (smallmsg)
-        document.getElementById("smallAlert").innerText = smallmsg;
-    else
-        document.getElementById("smallAlert").innerText = " ";
-    if (!document.getElementById("alertDialog").hasAttribute("open"))
-        document.getElementById("alertDialog").showModal();
-    if (timer)
-        setTimeout(function () {
-            document.getElementById("alertDialog").close();
-        }, timer);
+    if (!doc) return false;
+    if (window.realtimeEnabled && realtimeState && realtimeState.joined && realtimeState.shadowDoc) {
+        if (realtimeState.pending || realtimeState.dirty) return true;
+        try {
+            return draftsStableStringify(doc) !== draftsStableStringify(realtimeState.shadowDoc);
+        } catch (e) {
+            return true;
+        }
+    }
+    return draftsHasChanges(doc);
 }
+
+// Closing or navigating away from a tab with unsaved edits: browsers only
+// allow their own generic leave/stay prompt here, so the choice offered is
+// stay (and save) or leave. Either way, flush the debounced local draft
+// first so a leave can still be recovered from the drafts sidebar.
+window.addEventListener('beforeunload', function (e) {
+    if (editorUnloadWarningDisabled) return;
+    if (!editorHasUnsavedChanges()) return;
+    if (draftsCache && draftsCache.save) {
+        draftsCache.cancelSave();
+        var id = getDocID();
+        if (id) {
+            try {
+                draftsCache.save(id, getDraftDocValue(), getDraftValidationErrorCount());
+            } catch (err) {}
+        }
+    }
+    e.preventDefault();
+    // Chrome still requires returnValue to be set for the prompt to appear.
+    e.returnValue = '';
+});
 
 export {
     loadJSON,
     save,
     getDocID,
+    editorHasUnsavedChanges,
     copyText,
     importFile,
     loadFile,
     downloadFile,
     downloadText,
-    downloadHtml,
-    showAlert
+    downloadHtml
 };

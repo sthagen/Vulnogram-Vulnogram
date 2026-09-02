@@ -101,8 +101,8 @@ block content
         if !min
             input.tab(name='tabs', type='radio', id='changesTab', value="6")
             label.lbl(for='changesTab') Changes
-            .wht.fil.bort
-                div#unSavedChanges
+            .bort
+                div#unSavedChanges.gap.bor.rnd.wht
                 div#changelog
     
     block initGlobals
@@ -150,7 +150,6 @@ block content
 
     if doc && doc.body
         script getChanges("#{doc_id}");
-    +alertDialog
 
 block subcontent
     if !min
@@ -174,13 +173,3 @@ block subcontent
 block logolink
     br
     a.vgi-logo(href="https://github.com/Vulnogram/Vulnogram") Vulnogram Project
-
-mixin alertDialog
-    dialog.bor.rndx.shd.pad2#alertDialog
-      center
-        form(onsubmit="event.preventDefault();return false;")
-            h2.vgi-alert#alertMessage
-            .gap#smallAlert  
-            center.gap
-                input#alertOk.btn.sfe(type="reset" onclick="document.getElementById('alertDialog').close();" value="OK")
-                input#alertCancel.btn.red.alert-cancel(type="reset" onclick="document.getElementById('alertDialog').close();" value="Cancel")
